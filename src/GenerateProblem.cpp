@@ -50,7 +50,7 @@
 #include <mpi.h>
 #endif
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 #include <limits>
 #include <cstdio>
 #include <cstdlib>
@@ -227,19 +227,19 @@ __global__ void kernel_generate_problem(local_int_t m,
         if(curcol == currentGlobalRow)
         {
             // Store diagonal entry index
-            __builtin_nontemporal_store(threadIdx.x, matrixDiagonal + currentLocalRow);
+            __stcs(matrixDiagonal + currentLocalRow, threadIdx.x);
 
             // Diagonal matrix values are 26
-            __builtin_nontemporal_store(26.0, matrixValues + idx);
+            __stcs(matrixValues + idx, 26.0);
         }
         else
         {
             // Off-diagonal matrix values are -1
-            __builtin_nontemporal_store(-1.0, matrixValues + idx);
+            __stcs(matrixValues + idx, -1.0);
         }
 
         // Store current global column
-        __builtin_nontemporal_store(curcol, mtxIndG + idx);
+        __stcs(mtxIndG + idx, curcol);
 
         // Interior vertices have 27 neighboring vertices
         numberOfNonzerosInRow = numberOfNonzerosPerRow;
@@ -262,19 +262,19 @@ __global__ void kernel_generate_problem(local_int_t m,
             if(curcol == currentGlobalRow)
             {
                 // Store diagonal entry index
-                __builtin_nontemporal_store(offset, matrixDiagonal + currentLocalRow);
+                __stcs(matrixDiagonal + currentLocalRow, offset);
 
                 // Diagonal matrix values are 26
-                __builtin_nontemporal_store(26.0, matrixValues + idx);
+                __stcs(matrixValues + idx, 26.0);
             }
             else
             {
                 // Off-diagonal matrix values are -1
-                __builtin_nontemporal_store(-1.0, matrixValues + idx);
+                __stcs(matrixValues + idx, -1.0);
             }
 
             // Store current global column
-            __builtin_nontemporal_store(curcol, mtxIndG + idx);
+            __stcs(mtxIndG + idx, curcol);
         }
 
         // First thread writes number of neighboring vertices, including the
@@ -288,19 +288,19 @@ __global__ void kernel_generate_problem(local_int_t m,
     // For each row, initialize vector arrays and number of vertices
     if(threadIdx.x == 0)
     {
-        __builtin_nontemporal_store(numberOfNonzerosInRow, nonzerosInRow + currentLocalRow);
+        __stcs(nonzerosInRow + currentLocalRow, numberOfNonzerosInRow);
 
         // Store local to global mapping
-        __builtin_nontemporal_store(currentGlobalRow, localToGlobalMap + currentLocalRow);
+        __stcs(localToGlobalMap + currentLocalRow, currentGlobalRow);
 
         // Store local row hash
         local_int_t crd  = iz * nx * ny + iy * (nx << 1) + (ix << 2);
         local_int_t hash = get_hash(ix, iy, iz) * nx * ny * nz + crd;
-        __builtin_nontemporal_store(hash, rowHash + currentLocalRow);
+        __stcs(rowHash + currentLocalRow, hash);
 
         if(b != NULL)
         {
-            __builtin_nontemporal_store(26.0 - (numberOfNonzerosInRow - 1.0), b + currentLocalRow);
+            __stcs(b + currentLocalRow, 26.0 - (numberOfNonzerosInRow - 1.0));
         }
     }
 }
@@ -468,7 +468,7 @@ void GenerateProblem(SparseMatrix & A, Vector * b, Vector * x, Vector * xexact)
     // Initialize x vector, if not NULL
     if(x != NULL)
     {
-        HIP_CHECK(hipMemset(x->d_values, 0, sizeof(double) * localNumberOfRows));
+        HIP_CHECK(cudaMemset(x->d_values, 0, sizeof(double) * localNumberOfRows));
     }
 
     // Initialize exact solution, if not NULL
@@ -487,7 +487,7 @@ void GenerateProblem(SparseMatrix & A, Vector * b, Vector * x, Vector * xexact)
 
     // Copy number of local non-zero entries to host
     local_int_t localNumberOfNonzeros;
-    HIP_CHECK(hipMemcpy(&localNumberOfNonzeros, tmp, sizeof(local_int_t), hipMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(&localNumberOfNonzeros, tmp, sizeof(local_int_t), cudaMemcpyDeviceToHost));
 
     global_int_t totalNumberOfNonzeros = 0;
 #ifndef HPCG_NO_MPI
@@ -533,11 +533,11 @@ void CopyProblemToHost(SparseMatrix& A, Vector* b, Vector* x, Vector* xexact)
     A.mtxIndG[0] = new global_int_t[A.localNumberOfRows * A.numberOfNonzerosPerRow];
 
     // Copy GPU data to host
-    HIP_CHECK(hipMemcpy(A.nonzerosInRow, A.d_nonzerosInRow, sizeof(char) * A.localNumberOfRows, hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(A.mtxIndG[0], A.d_mtxIndG, sizeof(global_int_t) * A.localNumberOfRows * A.numberOfNonzerosPerRow, hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(A.matrixValues[0], A.d_matrixValues, sizeof(double) * A.localNumberOfRows * A.numberOfNonzerosPerRow, hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(mtxDiag, A.d_matrixDiagonal, sizeof(local_int_t) * A.localNumberOfRows, hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(A.localToGlobalMap.data(), A.d_localToGlobalMap, sizeof(global_int_t) * A.localNumberOfRows, hipMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(A.nonzerosInRow, A.d_nonzerosInRow, sizeof(char) * A.localNumberOfRows, cudaMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(A.mtxIndG[0], A.d_mtxIndG, sizeof(global_int_t) * A.localNumberOfRows * A.numberOfNonzerosPerRow, cudaMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(A.matrixValues[0], A.d_matrixValues, sizeof(double) * A.localNumberOfRows * A.numberOfNonzerosPerRow, cudaMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(mtxDiag, A.d_matrixDiagonal, sizeof(local_int_t) * A.localNumberOfRows, cudaMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(A.localToGlobalMap.data(), A.d_localToGlobalMap, sizeof(global_int_t) * A.localNumberOfRows, cudaMemcpyDeviceToHost));
 
     HIP_CHECK(deviceFree(A.d_nonzerosInRow));
     HIP_CHECK(deviceFree(A.d_matrixDiagonal));
@@ -564,18 +564,18 @@ void CopyProblemToHost(SparseMatrix& A, Vector* b, Vector* x, Vector* xexact)
     if(b != NULL)
     {
         InitializeVector(*b, A.localNumberOfRows);
-        HIP_CHECK(hipMemcpy(b->values, b->d_values, sizeof(double) * b->localLength, hipMemcpyDeviceToHost));
+        HIP_CHECK(cudaMemcpy(b->values, b->d_values, sizeof(double) * b->localLength, cudaMemcpyDeviceToHost));
     }
 
     if(x != NULL)
     {
         InitializeVector(*x, A.localNumberOfRows);
-        HIP_CHECK(hipMemcpy(x->values, x->d_values, sizeof(double) * x->localLength, hipMemcpyDeviceToHost));
+        HIP_CHECK(cudaMemcpy(x->values, x->d_values, sizeof(double) * x->localLength, cudaMemcpyDeviceToHost));
     }
 
     if(xexact != NULL)
     {
         InitializeVector(*xexact, A.localNumberOfRows);
-        HIP_CHECK(hipMemcpy(xexact->values, xexact->d_values, sizeof(double) * xexact->localLength, hipMemcpyDeviceToHost));
+        HIP_CHECK(cudaMemcpy(xexact->values, xexact->d_values, sizeof(double) * xexact->localLength, cudaMemcpyDeviceToHost));
     }
 }

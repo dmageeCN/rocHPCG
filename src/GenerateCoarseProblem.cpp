@@ -46,7 +46,7 @@
  HPCG routine
  */
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 #include <cassert>
 
 #include "GenerateCoarseProblem.hpp"
@@ -127,7 +127,7 @@ void GenerateCoarseProblem(const SparseMatrix & Af) {
     HIP_CHECK(deviceMalloc((void**)&d_f2cOperator, sizeof(index_int_t) * localNumberOfRows));
     HIP_CHECK(deviceMalloc((void**)&d_c2fOperator, sizeof(index_int_t) * nxf * nyf * nzf));
 
-    HIP_CHECK(hipMemset(d_c2fOperator, -1, sizeof(index_int_t) * nxf * nyf * nzf));
+    HIP_CHECK(cudaMemset(d_c2fOperator, -1, sizeof(index_int_t) * nxf * nyf * nzf));
 
     dim3 f2c_blocks((nxc - 1) / 2 + 1,
                     (nyc - 1) / 2 + 1,
@@ -198,7 +198,7 @@ void CopyCoarseProblemToHost(SparseMatrix& A)
 
     // Copy f2c operator to host
     index_int_t* buffer = new index_int_t[A.Ac->localNumberOfRows];
-    HIP_CHECK(hipMemcpy(buffer, A.mgData->d_f2cOperator, sizeof(index_int_t) * A.Ac->localNumberOfRows, hipMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(buffer, A.mgData->d_f2cOperator, sizeof(index_int_t) * A.Ac->localNumberOfRows, cudaMemcpyDeviceToHost));
 
     // Convert
     A.mgData->f2cOperator = new local_int_t[A.Ac->localNumberOfRows];

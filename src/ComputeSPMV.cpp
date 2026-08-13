@@ -49,7 +49,7 @@
 #include "ComputeSPMV.hpp"
 #include "ExchangeHalo.hpp"
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 #define LAUNCH_SPMV_ELL(blocksize, width)                                                \
     {                                                                                    \
@@ -104,19 +104,19 @@ __global__ void kernel_spmv_ell_coarse(index_int_t size,
         return;
     }
 
-    index_int_t f2c = __builtin_nontemporal_load(f2cOperator + gid);
-    index_int_t row = __builtin_nontemporal_load(perm + f2c);
+    index_int_t f2c = __ldcs(f2cOperator + gid);
+    index_int_t row = __ldcs(perm + f2c);
 
     double sum = 0.0;
 
     for(index_int_t p = 0; p < ell_width; ++p)
     {
         local_int_t idx = (local_int_t)p * m + row;
-        index_int_t col = __builtin_nontemporal_load(ell_col_ind + idx);
+        index_int_t col = __ldcs(ell_col_ind + idx);
 
         if(col >= 0 && col < n)
         {
-            sum = fma(__builtin_nontemporal_load(ell_val + idx), __ldg(x + col), sum);
+            sum = fma(__ldcs(ell_val + idx), __ldg(x + col), sum);
         }
         else
         {
@@ -124,7 +124,7 @@ __global__ void kernel_spmv_ell_coarse(index_int_t size,
         }
     }
 
-    __builtin_nontemporal_store(sum, y + row);
+    __stcs(y + row, sum);
 }
 
 template <unsigned int BLOCKSIZE, unsigned int WIDTH>
@@ -156,17 +156,17 @@ __global__ void kernel_spmv_ell(index_int_t m,
 #pragma unroll
     for(index_int_t p = 0; p < WIDTH; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(ell_col_ind + idx);
+        index_int_t col = __ldcs(ell_col_ind + idx);
 
         if(col >= 0 && col < m)
         {
-            sum = fma(__builtin_nontemporal_load(ell_val + idx), x[col], sum);
+            sum = fma(__ldcs(ell_val + idx), x[col], sum);
         }
 
         idx += m;
     }
 
-    __builtin_nontemporal_store(sum, y + row);
+    __stcs(y + row, sum);
 }
 
 template <unsigned int BLOCKSIZE, unsigned int WIDTH>
@@ -194,11 +194,11 @@ __global__ void kernel_spmv_halo(index_int_t m,
 #pragma unroll
     for(index_int_t p = 0; p < WIDTH; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(halo_col_ind + idx);
+        index_int_t col = __ldcs(halo_col_ind + idx);
 
         if(col >= 0 && col < n)
         {
-            sum = fma(__builtin_nontemporal_load(halo_val + idx), x[col], sum);
+            sum = fma(__ldcs(halo_val + idx), x[col], sum);
         }
 
         idx += m;

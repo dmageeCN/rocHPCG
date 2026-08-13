@@ -61,18 +61,18 @@ const char* NULLDEVICE="/dev/null";
 
 #include <fstream>
 #include <iostream>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #include "utils.hpp"
 #include "hpcg.hpp"
 
 #include "ReadHpcgDat.hpp"
 
-hipStream_t stream_interior;
-hipStream_t stream_halo;
-hipEvent_t halo_gather;
+cudaStream_t stream_interior;
+cudaStream_t stream_halo;
+cudaEvent_t halo_gather;
 void* workspace;
-hipAllocator_t allocator;
+cudaAllocator_t allocator;
 
 std::ofstream HPCG_fout; //!< output file stream for logging activities during HPCG run
 
@@ -192,7 +192,7 @@ HPCG_Init(int * argc_p, char ** *argv_p, HPCG_Params & params) {
 
   // Simple device management
   int ndevs = 0;
-  HIP_CHECK(hipGetDeviceCount(&ndevs));
+  HIP_CHECK(cudaGetDeviceCount(&ndevs));
 
   // Single GPU device can be selected via cli
   // Multi GPU devices are selected automatically
@@ -201,7 +201,7 @@ HPCG_Init(int * argc_p, char ** *argv_p, HPCG_Params & params) {
     if(ndevs <= params.device)
     {
       fprintf(stderr, "Error: invalid device ID\n");
-      HIP_CHECK(hipDeviceReset());
+      HIP_CHECK(cudaDeviceReset());
       exit(1);
     }
   }
@@ -211,14 +211,14 @@ HPCG_Init(int * argc_p, char ** *argv_p, HPCG_Params & params) {
   }
 
   // Set device
-  HIP_CHECK(hipSetDevice(params.device));
+  HIP_CHECK(cudaSetDevice(params.device));
 
   // Create streams
-  HIP_CHECK(hipStreamCreate(&stream_interior));
-  HIP_CHECK(hipStreamCreate(&stream_halo));
+  HIP_CHECK(cudaStreamCreate(&stream_interior));
+  HIP_CHECK(cudaStreamCreate(&stream_halo));
 
   // Create Events
-  HIP_CHECK(hipEventCreate(&halo_gather));
+  HIP_CHECK(cudaEventCreate(&halo_gather));
 
   // Initialize memory allocator
 #ifdef HPCG_MEMMGMT

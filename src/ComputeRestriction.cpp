@@ -35,7 +35,7 @@
 #include "ComputeRestriction.hpp"
 #include "ExchangeHalo.hpp"
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 #define LAUNCH_FUSED_RESTRICT_SPMV(blocksize, width)                                           \
     {                                                                                          \
@@ -99,28 +99,28 @@ __global__ void kernel_fused_restrict_spmv(index_int_t size,
         return;
     }
 
-    index_int_t idx_fine      = __builtin_nontemporal_load(f2cOperator + idx_coarse);
-    index_int_t idx_perm_fine = __builtin_nontemporal_load(perm_fine + idx_fine);
-    index_int_t idx_perm_coarse = __builtin_nontemporal_load(perm_coarse + idx_coarse);
+    index_int_t idx_fine      = __ldcs(f2cOperator + idx_coarse);
+    index_int_t idx_perm_fine = __ldcs(perm_fine + idx_fine);
+    index_int_t idx_perm_coarse = __ldcs(perm_coarse + idx_coarse);
 
-    double sum = __builtin_nontemporal_load(fine + idx_perm_fine);
+    double sum = __ldcs(fine + idx_perm_fine);
 
     local_int_t idx = idx_perm_fine;
 
 #pragma unroll
     for(index_int_t p = 0; p < WIDTH; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(ell_col_ind + idx);
+        index_int_t col = __ldcs(ell_col_ind + idx);
 
         if(col >= 0 && col < m)
         {
-            sum = fma(-__builtin_nontemporal_load(ell_val + idx), xf[col], sum);
+            sum = fma(-__ldcs(ell_val + idx), xf[col], sum);
         }
 
         idx += m;
     }
 
-    __builtin_nontemporal_store(sum, coarse + idx_perm_coarse);
+    __stcs(coarse + idx_perm_coarse, sum);
 }
 
 template <unsigned int BLOCKSIZE>

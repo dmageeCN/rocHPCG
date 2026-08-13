@@ -30,19 +30,19 @@
 #define UTILS_HPP
 
 #include <cstdio>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #include "Memory.hpp"
 
 // Streams
-extern hipStream_t stream_interior;
-extern hipStream_t stream_halo;
+extern cudaStream_t stream_interior;
+extern cudaStream_t stream_halo;
 // Events
-extern hipEvent_t halo_gather;
+extern cudaEvent_t halo_gather;
 // Workspace
 extern void* workspace;
 // Memory allocator
-extern hipAllocator_t allocator;
+extern cudaAllocator_t allocator;
 
 #define RNG_SEED 0x586744
 #define MAX_COLORS 128
@@ -60,14 +60,14 @@ inline void nullCheck(void*         ptr,
   }
 }
 
-#define HIP_CHECK(val) hipCheck((val), #val, __FILE__, __LINE__)
-inline void hipCheck(hipError_t        err,
+#define HIP_CHECK(val) cudaCheck((val), #val, __FILE__, __LINE__)
+inline void cudaCheck(cudaError_t        err,
                      const char* const func,
                      const char* const file,
                      const int         line) {
-  if(err != hipSuccess) {
-    fprintf(stderr, "HIP ERROR  %s (%d) in file %s ; line %d\n", \
-                hipGetErrorString(err),                             \
+  if(err != cudaSuccess) {
+    fprintf(stderr, "CUDA ERROR  %s (%d) in file %s ; line %d\n", \
+                cudaGetErrorString(err),                             \
                 err,                                                \
                 file,                                           \
                 line);
@@ -77,7 +77,7 @@ inline void hipCheck(hipError_t        err,
 
 #define RETURN_IF_HIP_ERROR(err)    \
 {                                   \
-    if(err != hipSuccess)           \
+    if(err != cudaSuccess)           \
     {                               \
         return err;                 \
     }                               \

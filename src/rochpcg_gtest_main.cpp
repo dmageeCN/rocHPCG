@@ -34,7 +34,7 @@
 
 #include <gtest/gtest.h>
 #include <stdexcept>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #ifndef HPCG_NO_MPI
 #include <mpi.h>
@@ -78,9 +78,9 @@ int main(int argc, char* argv[])
 
     // Device query
     int device_count;
-    hipError_t status = hipGetDeviceCount(&device_count);
+    cudaError_t status = cudaGetDeviceCount(&device_count);
 
-    if(status != hipSuccess)
+    if(status != cudaSuccess)
     {
         if(rank == 0)
         {
@@ -99,12 +99,12 @@ int main(int argc, char* argv[])
 
     for(int i = 0; i < device_count; ++i)
     {
-        hipDeviceProp_t props;
-        status = hipGetDeviceProperties(&props, i);
+        cudaDeviceProp props;
+        status = cudaGetDeviceProperties(&props, i);
 
         if(rank == 0)
         {
-            if(status != hipSuccess)
+            if(status != cudaSuccess)
             {
                 fprintf(stderr, "Error: cannot get device ID %d's properties\n", i);
             }
@@ -139,15 +139,15 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    status = hipSetDevice(device_id);
+    status = cudaSetDevice(device_id);
 
-    if(rank == 0 && status != hipSuccess)
+    if(rank == 0 && status != cudaSuccess)
     {
         fprintf(stderr, "Error: cannot set device ID %d, there may not be such device ID\n", device_id);
     }
 
-    hipDeviceProp_t prop;
-    hipGetDeviceProperties(&prop, device_id);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, device_id);
     printf("Using device ID %d (%s) for rocHPCG\n", device_id, prop.name);
 
 #ifndef HPCG_NO_MPI
@@ -173,7 +173,7 @@ int main(int argc, char* argv[])
 
     int ret = RUN_ALL_TESTS();
 
-    hipDeviceReset();
+    cudaDeviceReset();
 
 #ifndef HPCG_NO_MPI
     MPI_Finalize();

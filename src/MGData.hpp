@@ -50,7 +50,7 @@
 #define MGDATA_HPP
 
 #include <cassert>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #include "utils.hpp"
 #include "SparseMatrix.hpp"

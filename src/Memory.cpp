@@ -36,9 +36,9 @@
 #include "utils.hpp"
 
 #include <algorithm>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
-hipAllocator_t::hipAllocator_t(void)
+cudaAllocator_t::cudaAllocator_t(void)
 {
     // Initialize sizes
     this->total_mem_ = 0;
@@ -49,13 +49,13 @@ hipAllocator_t::hipAllocator_t(void)
     this->buffer_ = NULL;
 }
 
-hipAllocator_t::~hipAllocator_t(void)
+cudaAllocator_t::~cudaAllocator_t(void)
 {
     // Call clear function
     HIP_CHECK(this->Clear());
 }
 
-hipError_t hipAllocator_t::Initialize(int rank,
+cudaError_t cudaAllocator_t::Initialize(int rank,
                                       int nprocs,
                                       index_int_t nx,
                                       index_int_t ny,
@@ -68,7 +68,7 @@ hipError_t hipAllocator_t::Initialize(int rank,
 
     size_t free_mem;
     size_t total_mem;
-    HIP_CHECK(hipMemGetInfo(&free_mem, &total_mem));
+    HIP_CHECK(cudaMemGetInfo(&free_mem, &total_mem));
 
     if(size > free_mem)
     {
@@ -79,39 +79,39 @@ hipError_t hipAllocator_t::Initialize(int rank,
                     free_mem >> 20);
         }
 
-        return hipErrorMemoryAllocation;
+        return cudaErrorMemoryAllocation;
     }
 
-    RETURN_IF_HIP_ERROR(hipMalloc((void**)&this->buffer_, size));
-    RETURN_IF_HIP_ERROR(hipMemset(this->buffer_, 0, size));
+    RETURN_IF_HIP_ERROR(cudaMalloc((void**)&this->buffer_, size));
+    RETURN_IF_HIP_ERROR(cudaMemset(this->buffer_, 0, size));
 
     this->total_mem_ = size;
     this->free_mem_ = size;
 
-    return hipSuccess;
+    return cudaSuccess;
 }
 
-hipError_t hipAllocator_t::Clear(void)
+cudaError_t cudaAllocator_t::Clear(void)
 {
     if(this->used_mem_ != 0)
     {
         fprintf(stderr, "*** WARNING *** Memory leak detected on device\n");
-        return hipErrorMemoryAllocation;
+        return cudaErrorMemoryAllocation;
     }
 
     if(this->total_mem_ > 0)
     {
-        RETURN_IF_HIP_ERROR(hipFree(this->buffer_));
+        RETURN_IF_HIP_ERROR(cudaFree(this->buffer_));
 
         this->total_mem_ = 0;
         this->free_mem_ = 0;
         this->used_mem_ = 0;
     }
 
-    return hipSuccess;
+    return cudaSuccess;
 }
 
-hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
+cudaError_t cudaAllocator_t::Alloc(void** ptr, size_t size)
 {
     // Align by 2MB
     size = ((size - 1) / (1 << 21) + 1) * (1 << 21);
@@ -119,11 +119,11 @@ hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
     // Check if sufficient free memory available
     if(this->free_mem_ < size)
     {
-        return hipErrorMemoryAllocation;
+        return cudaErrorMemoryAllocation;
     }
 
     // Iterator through the list of objects
-    std::list<hipMemObject_t*>::iterator it = this->objects_.begin();
+    std::list<cudaMemObject_t*>::iterator it = this->objects_.begin();
 
     // Find a spot
     while(true)
@@ -131,7 +131,7 @@ hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
         // If list is empty
         if(this->objects_.empty())
         {
-            this->objects_.push_back(new hipMemObject_t);
+            this->objects_.push_back(new cudaMemObject_t);
 
             this->objects_.back()->size = size;
             this->objects_.back()->address = this->buffer_;
@@ -145,7 +145,7 @@ hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
         else if(it == this->objects_.end())
         {
             // Get last object
-            hipMemObject_t* obj = this->objects_.back();
+            cudaMemObject_t* obj = this->objects_.back();
 
             // Check if enough free memory at the end
             size_t slot = (this->buffer_ + this->total_mem_)
@@ -154,10 +154,10 @@ hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
             // Out of memory
             if(slot < size)
             {
-                return hipErrorMemoryAllocation;
+                return cudaErrorMemoryAllocation;
             }
 
-            this->objects_.push_back(new hipMemObject_t);
+            this->objects_.push_back(new cudaMemObject_t);
 
             this->objects_.back()->size = size;
             this->objects_.back()->address = obj->address + obj->size;
@@ -171,8 +171,8 @@ hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
         else
         {
             // Get current object
-            hipMemObject_t* curr = *it;
-            hipMemObject_t* next = *(++it);
+            cudaMemObject_t* curr = *it;
+            cudaMemObject_t* next = *(++it);
 
             if(it == this->objects_.end())
             {
@@ -189,7 +189,7 @@ hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
             }
 
             // Insert new object
-            this->objects_.insert(it, new hipMemObject_t);
+            this->objects_.insert(it, new cudaMemObject_t);
             --it;
 
             (*it)->size = size;
@@ -204,26 +204,26 @@ hipError_t hipAllocator_t::Alloc(void** ptr, size_t size)
     this->free_mem_ -= size;
     this->used_mem_ += size;
 
-    return hipSuccess;
+    return cudaSuccess;
 }
 
-hipError_t hipAllocator_t::Realloc(void* ptr, size_t size)
+cudaError_t cudaAllocator_t::Realloc(void* ptr, size_t size)
 {
     // Align by 2MB
     size = ((size - 1) / (1 << 21) + 1) * (1 << 21);
 
-    std::list<hipMemObject_t*>::iterator it = this->objects_.begin();
+    std::list<cudaMemObject_t*>::iterator it = this->objects_.begin();
 
     if(this->objects_.empty())
     {
-        return hipErrorInvalidDevicePointer;
+        return cudaErrorInvalidDevicePointer;
     }
 
     while(true)
     {
         if(it == this->objects_.end())
         {
-            return hipErrorInvalidDevicePointer;
+            return cudaErrorInvalidDevicePointer;
         }
 
         if((*it)->address == ptr)
@@ -241,23 +241,23 @@ hipError_t hipAllocator_t::Realloc(void* ptr, size_t size)
         ++it;
     }
 
-    return hipSuccess;
+    return cudaSuccess;
 }
 
-hipError_t hipAllocator_t::Free(void* ptr)
+cudaError_t cudaAllocator_t::Free(void* ptr)
 {
-    std::list<hipMemObject_t*>::iterator it = this->objects_.begin();
+    std::list<cudaMemObject_t*>::iterator it = this->objects_.begin();
 
     if(this->objects_.empty() == true)
     {
-        return hipErrorInvalidDevicePointer;
+        return cudaErrorInvalidDevicePointer;
     }
 
     while(true)
     {
         if(it == this->objects_.end())
         {
-            return hipErrorInvalidDevicePointer;
+            return cudaErrorInvalidDevicePointer;
         }
 
         if((*it)->address == ptr)
@@ -273,10 +273,10 @@ hipError_t hipAllocator_t::Free(void* ptr)
         ++it;
     }
 
-    return hipSuccess;
+    return cudaSuccess;
 }
 
-size_t hipAllocator_t::ComputeMaxMemoryRequirements_(int nprocs,
+size_t cudaAllocator_t::ComputeMaxMemoryRequirements_(int nprocs,
                                                      index_int_t nx,
                                                      index_int_t ny,
                                                      index_int_t nz) const
@@ -403,76 +403,76 @@ size_t hipAllocator_t::ComputeMaxMemoryRequirements_(int nprocs,
     return size;
 }
 
-hipError_t deviceMalloc(void** ptr, size_t size)
+cudaError_t deviceMalloc(void** ptr, size_t size)
 {
 #ifdef HPCG_MEMMGMT
     if(size < 0)
     {
-        return hipErrorInvalidValue;
+        return cudaErrorInvalidValue;
     }
     else if(ptr == NULL)
     {
-        return hipErrorInvalidValue;
+        return cudaErrorInvalidValue;
     }
 
     if(size == 0)
     {
-        return hipSuccess;
+        return cudaSuccess;
     }
 
     return allocator.Alloc(ptr, size);
 #else
-    return hipMalloc(ptr, size);
+    return cudaMalloc(ptr, size);
 #endif
 }
 
-hipError_t deviceRealloc(void* ptr, size_t size)
+cudaError_t deviceRealloc(void* ptr, size_t size)
 {
 #ifdef HPCG_MEMMGMT
     if(size <= 0)
     {
-        return hipErrorInvalidValue;
+        return cudaErrorInvalidValue;
     }
     else if(ptr == NULL)
     {
-        return hipErrorInvalidValue;
+        return cudaErrorInvalidValue;
     }
 
     return allocator.Realloc(ptr, size);
 #else
-    return hipSuccess;
+    return cudaSuccess;
 #endif
 }
 
-hipError_t deviceDefrag(void** ptr, size_t size)
+cudaError_t deviceDefrag(void** ptr, size_t size)
 {
     if(size == 0)
     {
-        return hipSuccess;
+        return cudaSuccess;
     }
 
 #if defined(DEFRAG_OPT) && defined(HPCG_MEMMGMT)
     void* defrag;
 
     RETURN_IF_HIP_ERROR(deviceMalloc(&defrag, size));
-    RETURN_IF_HIP_ERROR(hipMemcpy(defrag, *ptr, size, hipMemcpyDeviceToDevice));
+    RETURN_IF_HIP_ERROR(cudaMemcpy(defrag, *ptr, size, cudaMemcpyDeviceToDevice));
     RETURN_IF_HIP_ERROR(deviceFree(*ptr));
 
     *ptr = defrag;
 #endif
-    return hipSuccess;
+    return cudaSuccess;
 }
 
-hipError_t deviceFree(void* ptr)
+cudaError_t deviceFree(void* ptr)
 {
 #ifdef HPCG_MEMMGMT
     if(ptr == NULL)
     {
-        return hipErrorInvalidValue;
+        return cudaErrorInvalidValue;
     }
 
     return allocator.Free(ptr);
 #else
-    return hipFree(ptr);
+    return cudaFree(ptr);
 #endif
 }

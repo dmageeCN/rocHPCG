@@ -1,4 +1,4 @@
-# Modifications (c) 2019-2023 Advanced Micro Devices, Inc.
+# Modifications (c) 2019-2026 Advanced Micro Devices, Inc.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -23,17 +23,18 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+# NOTE: This is a CUDA port of the original HIP/ROCm rocHPCG project. The
+# HIP/rocPRIM toolchain discovery (find_package(HIP)/find_package(rocprim)),
+# the AMDGPU_TARGETS gfx-arch list, and the rocm-cmake packaging bootstrap
+# have all been replaced with native CMake CUDA-language support and
+# find_package(CUDAToolkit). CUB (rocPRIM's CUDA-native equivalent) ships
+# header-only with the CUDA Toolkit and needs no separate find_package.
 
-# Consider removing this in the future
-# This should appear before the project command, because it does not use FORCE
-set(CMAKE_INSTALL_PREFIX ${ROCM_PATH} CACHE PATH "Install path prefix, prepended onto install directories")
+cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 
-# CMake modules
+# CMake modules (project-local only; no ROCm-specific module paths needed)
 list(APPEND CMAKE_MODULE_PATH
-     ${CMAKE_CURRENT_SOURCE_DIR}/cmake
-     ${ROCM_PATH}/lib/cmake/hip
-     ${ROCM_PATH}/hip/cmake)
+     ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 # Set a default build type if none was specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -47,8 +48,14 @@ if(POLICY CMP0066)
   cmake_policy(SET CMP0066 NEW)
 endif()
 
-# rocHPCG project
-project(rochpcg LANGUAGES CXX)
+# Default to H100 (sm_90) if the user hasn't specified an architecture list.
+if(NOT CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES "90")
+endif()
+
+# rocHPCG project (native CUDA language, replacing the HIP-CMake-package's
+# hip_add_executable() approach)
+project(rochpcg LANGUAGES CXX CUDA)
 
 # Force library install path to lib (CentOS 7 defaults to lib64)
 set(CMAKE_INSTALL_LIBDIR "lib" CACHE INTERNAL "Installation directory for libraries" FORCE)
@@ -57,6 +64,8 @@ set(CMAKE_INSTALL_LIBDIR "lib" CACHE INTERNAL "Installation directory for librar
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # Build options
 option(HPCG_DEBUG "Compile with modest debugging turned on" OFF)
@@ -70,38 +79,14 @@ option(OPT_MEMMGMT "Build with memory management module" ON)
 option(OPT_DEFRAG "Build with memory management defragmentation" ON)
 option(GPU_AWARE_MPI "Enable use of GPU-Aware MPI functionality" OFF)
 
-# roctx Markers
-option(OPT_ROCTX "Enable rocTX markers" OFF)
+# NVTX Markers (was: roctx Markers / OPT_ROCTX)
+option(OPT_NVTX "Enable NVTX markers" OFF)
 
 # Dependencies
 include(cmake/Dependencies.cmake)
 
-# Find HIP package
-find_package(HIP REQUIRED)
-find_package(rocprim REQUIRED)
-
-# GPU arch targets
-if(AMDGPU_TARGETS AND NOT GPU_TARGETS)
-  message( DEPRECATION "AMDGPU_TARGETS use is deprecated. Use GPU_TARGETS." )
-endif()
-set(AMDGPU_TARGETS "gfx900;gfx906" CACHE STRING "List of specific machine types for library to target")
-if(HIP_VERSION VERSION_GREATER_EQUAL "3.7")
-  set(AMDGPU_TARGETS "${AMDGPU_TARGETS};gfx908")
-endif()
-if(HIP_VERSION VERSION_GREATER_EQUAL "4.3")
-  set(AMDGPU_TARGETS "${AMDGPU_TARGETS};gfx90a")
-endif()
-if (HIP_VERSION VERSION_GREATER_EQUAL "5.7")
-  set(AMDGPU_TARGETS "${AMDGPU_TARGETS};gfx942")
-endif()
-if (HIP_VERSION VERSION_GREATER_EQUAL "6.5")
-  set(AMDGPU_TARGETS "${AMDGPU_TARGETS};gfx950;gfx1100")
-endif()
-# Don't force, as users should be able to override GPU_TARGETS at the command line if desired
-set(GPU_TARGETS "${AMDGPU_TARGETS}" CACHE STRING "GPU architectures to build for")
-
-# Setup version
-rocm_setup_version(VERSION 0.9.0)
+# Setup version (rocm_setup_version macro no longer available/needed)
+set(rochpcg_VERSION 0.9.0)
 
 # rocHPCG source directory
 add_subdirectory(src)

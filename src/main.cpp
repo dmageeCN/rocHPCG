@@ -62,10 +62,10 @@ using std::cin;
 using std::endl;
 
 #include <vector>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
-#ifdef OPT_ROCTX
-#include <roctracer/roctx.h>
+#ifdef OPT_NVTX
+#include <nvtx3/nvToolsExt.h>
 #endif
 
 
@@ -138,10 +138,10 @@ int main(int argc, char * argv[]) {
   // Only master rank prints out device
   if(rank == 0)
   {
-    hipDeviceProp_t prop;
-    HIP_CHECK(hipGetDeviceProperties(&prop, params.device));
+    cudaDeviceProp prop;
+    HIP_CHECK(cudaGetDeviceProperties(&prop, params.device));
 
-    printf("Using HIP device (%d): %s (%lu MB global memory)\n",
+    printf("Using CUDA device (%d): %s (%lu MB global memory)\n",
            params.device,
            prop.name,
            (prop.totalGlobalMem >> 20));
@@ -191,8 +191,8 @@ int main(int argc, char * argv[]) {
 
 
   double setup_time = mytimer();
-#ifdef OPT_ROCTX
-  roctxRangePush("Setup");
+#ifdef OPT_NVTX
+  nvtxRangePushA("Setup");
 #endif
 
   SparseMatrix A;
@@ -208,8 +208,8 @@ int main(int argc, char * argv[]) {
     GenerateCoarseProblem(*curLevelMatrix);
     curLevelMatrix = curLevelMatrix->Ac; // Make the just-constructed coarse grid the next level
   }
-#ifdef OPT_ROCTX
-  roctxRangePop(); // end of setup
+#ifdef OPT_NVTX
+  nvtxRangePop(); // end of setup
 #endif
   setup_time = mytimer() - setup_time; // Capture total time of setup
   times[9] = setup_time; // Save it for reporting
@@ -349,12 +349,12 @@ int main(int argc, char * argv[]) {
 
   // Call user-tunable set up function.
   double t7 = mytimer();
-#ifdef OPT_ROCTX
-  roctxRangePush("Optimize");
+#ifdef OPT_NVTX
+  nvtxRangePushA("Optimize");
 #endif
   OptimizeProblem(A, data, b, x, xexact);
-#ifdef OPT_ROCTX
-  roctxRangePop();
+#ifdef OPT_NVTX
+  nvtxRangePop();
 #endif
   t7 = mytimer() - t7;
   times[7] = t7;
@@ -458,7 +458,7 @@ int main(int argc, char * argv[]) {
 #else
     size_t free_mem;
     size_t total_mem;
-    HIP_CHECK(hipMemGetInfo(&free_mem, &total_mem));
+    HIP_CHECK(cudaMemGetInfo(&free_mem, &total_mem));
 
     size_t used_mem = total_mem - free_mem;
 #endif

@@ -1,4 +1,4 @@
-# Modifications (c) 2019-2023 Advanced Micro Devices, Inc.
+# Modifications (c) 2019-2026 Advanced Micro Devices, Inc.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -32,7 +32,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Version.hpp.in"
                "${PROJECT_BINARY_DIR}/include/Version.hpp"
 )
 
-# HPCG HIP sources
+# HPCG CUDA (device-kernel-containing) sources
 set(rochpcg_hip_source
   ComputeDotProduct.cpp
   ComputeSPMV.cpp
@@ -83,33 +83,42 @@ set(rochpcg_source
   mytimer.cpp
 )
 
-# Flag source files as hip source files
-foreach(i ${rochpcg_hip_source})
-  set_source_files_properties(${i} PROPERTIES HIP_SOURCE_PROPERTY_FORMAT TRUE)
-endforeach()
+# Mark the device-kernel-containing files as CUDA sources so nvcc compiles
+# them, regardless of their .cpp extension (keeping .cpp avoids renaming
+# every file to .cu and minimizes diff churn versus the original HIP source).
+set_source_files_properties(${rochpcg_hip_source} PROPERTIES LANGUAGE CUDA)
 
-# HIP flags workaround while target_compile_options does not work
-list(APPEND HIP_HIPCC_FLAGS "-std=c++17 -O3 -march=native -Wno-unused-command-line-argument -Wno-duplicate-decl-specifier -ffp-contract=fast -ffast-math -funsafe-math-optimizations")
+# Release/Debug flags. nvcc's --use_fast_math bundles the class of
+# approximations the original HIPCC flags (-ffp-contract=fast -ffast-math
+# -funsafe-math-optimizations) requested.
+list(APPEND CMAKE_CUDA_FLAGS "-O3;--use_fast_math;--extended-lambda")
 list(APPEND CMAKE_HOST_FLAGS "-O3;-march=native")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-list(APPEND HIP_HIPCC_FLAGS "-g")
+list(APPEND CMAKE_CUDA_FLAGS "-g;-G")
 list(APPEND CMAKE_HOST_FLAGS "-g")
 endif()
 
-# AMD targets
-foreach(target ${GPU_TARGETS})
-  list(APPEND HIP_HIPCC_FLAGS "--offload-arch=${target}")
-endforeach()
-
-# Target executable
+# Target executable (native CMake CUDA-language executable, replacing the
+# HIP-CMake-package's hip_add_executable() macro)
 if(BUILD_TEST)
-  hip_add_executable(rochpcg ${rochpcg_source} rochpcg_gtest_main.cpp test_rochpcg.cpp ${rochpcg_hip_source})
+  add_executable(rochpcg ${rochpcg_source} rochpcg_gtest_main.cpp test_rochpcg.cpp ${rochpcg_hip_source})
 else()
-  hip_add_executable(rochpcg ${rochpcg_source} main.cpp ${rochpcg_hip_source})
+  add_executable(rochpcg ${rochpcg_source} main.cpp ${rochpcg_hip_source})
 endif()
 
-target_compile_options(rochpcg PRIVATE ${CMAKE_HOST_FLAGS})
+# Needed for cross-TU device linking, since cudaLaunchCooperativeKernel-style
+# kernels and their host wrappers are spread across multiple *_hip_source
+# translation units.
+set_target_properties(rochpcg PROPERTIES
+  CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+)
+
+target_compile_options(rochpcg PRIVATE
+  $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_HOST_FLAGS}>
+  $<$<COMPILE_LANGUAGE:CUDA>:${CMAKE_CUDA_FLAGS} -Xcompiler=-march=native>
+)
 
 # Support only for contiguous arrays
 target_compile_definitions(rochpcg PRIVATE HPCG_CONTIGUOUS_ARRAYS)
@@ -148,16 +157,15 @@ endif()
 # Target include directories
 target_include_directories(rochpcg
                              PRIVATE
-                               $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-                               $<BUILD_INTERFACE:${HIP_INCLUDE_DIRS}>)
+                               $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>)
 
-# HIP
-target_link_libraries(rochpcg PRIVATE hip::host)
+# CUDA runtime (replaces hip::host)
+target_link_libraries(rochpcg PRIVATE CUDA::cudart)
 
-# Roctx
-if(OPT_ROCTX)
-  target_compile_definitions(rochpcg PRIVATE OPT_ROCTX)
-  target_link_libraries(rochpcg PRIVATE "${ROCM_PATH}/lib/libroctx64.so")
+# NVTX (was: Roctx / OPT_ROCTX)
+if(OPT_NVTX)
+  target_compile_definitions(rochpcg PRIVATE OPT_NVTX)
+  target_link_libraries(rochpcg PRIVATE ${HPCG_NVTX_TARGET})
 endif()
 
 # MPI
@@ -170,46 +178,33 @@ endif()
 # OpenMP
 if(HPCG_OPENMP)
   target_link_libraries(rochpcg PRIVATE OpenMP::OpenMP_CXX)
-  # Explicitly propagate OpenMP flags to the HIP linker to ensure
-  # __kmpc_* symbols are resolved
-  target_link_options(rochpcg PRIVATE ${OpenMP_CXX_FLAGS})
 else()
   target_compile_definitions(rochpcg PRIVATE HPCG_NO_OPENMP)
 endif()
 
-# Target link libraries
-target_link_libraries(rochpcg PRIVATE roc::rocprim)
+# CUB (rocPRIM's CUDA-native equivalent) ships header-only with the CUDA
+# Toolkit -- no link target needed (replaces target_link_libraries(... roc::rocprim)).
 
 if(BUILD_TEST)
   target_link_libraries(rochpcg PRIVATE GTest::GTest)
 endif()
 
-
-
-
 # Target properties
 set_target_properties(rochpcg PROPERTIES VERSION ${rochpcg_VERSION})
-set_property(TARGET rochpcg PROPERTY HIP_ARCHITECTURES ${AMDGPU_TARGETS})
 if(BUILD_TEST)
   set_target_properties(rochpcg PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
   set_target_properties(rochpcg PROPERTIES OUTPUT_NAME "rochpcg-test")
-  rocm_package_setup_component(clients)
-  rocm_package_setup_client_component(tests)
-  rocm_install(TARGETS rochpcg COMPONENT tests)
+  install(TARGETS rochpcg RUNTIME DESTINATION tests)
 else()
   set_target_properties(rochpcg PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endif()
 set_target_properties(rochpcg PROPERTIES DEBUG_POSTFIX "-d")
 
-# Install targets
-rocm_install_targets(TARGETS rochpcg
-                     PREFIX rochpcg)
-
-# Symbolic links
-rocm_install_symlink_subdir(rochpcg)
+# Install targets (rocm_install_targets/rocm_install_symlink_subdir macros
+# no longer available; plain install() used instead)
+install(TARGETS rochpcg RUNTIME DESTINATION bin)
 
 # Package specific CPACK vars
-rocm_package_add_dependencies(DEPENDS "hip-runtime-amd >= 4.5.0")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSE.md")
 
 if(NOT CPACK_PACKAGING_INSTALL_PREFIX)
@@ -220,8 +215,8 @@ set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "\${CPACK_PACKAGING_INSTALL_PR
 
 # Package name
 set(package_name rochpcg)
-
-rocm_create_package(
-  NAME ${package_name}
-  DESCRIPTION "ROCm HPCG application"
-  MAINTAINER "rocHPCG Maintainer <rochpcg-maintainer@amd.com>")
+set(CPACK_PACKAGE_NAME ${package_name})
+set(CPACK_PACKAGE_VERSION ${rochpcg_VERSION})
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "cuda-toolkit")
+set(CPACK_RPM_PACKAGE_REQUIRES "cuda-toolkit")
+include(CPack)

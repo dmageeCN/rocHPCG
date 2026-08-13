@@ -1,4 +1,4 @@
-# Modifications (c) 2019-2021 Advanced Micro Devices, Inc.
+# Modifications (c) 2019-2026 Advanced Micro Devices, Inc.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -22,14 +22,20 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-
+#
 # Dependencies
+#
+# NOTE (CUDA port): find_package(HIP)/find_package(rocprim), the manual
+# roctracer/roctx find_library()+add_library(IMPORTED) block, and the
+# rocm-cmake bootstrap-download-if-not-found + ROCMxxx include block have all
+# been replaced below with find_package(CUDAToolkit), which provides
+# CUDA::cudart/CUDA::cublas-equivalent imported targets directly with no
+# manual find_library boilerplate. CUB (rocPRIM's CUDA-native equivalent)
+# ships header-only with the CUDA Toolkit, so no separate find_package call
+# is needed for it.
 
 # Git
 find_package(Git REQUIRED)
-
-# Add some paths
-list(APPEND CMAKE_PREFIX_PATH ${ROCM_PATH} ${ROCM_PATH}/hip)
 
 # Find OpenMP package
 find_package(OpenMP)
@@ -61,47 +67,24 @@ if(HPCG_MPI)
   find_package(LIBNUMA REQUIRED)
 endif()
 
-# rocm-cmake
-find_package(ROCM 0.7.3 QUIET CONFIG PATHS ${CMAKE_PREFIX_PATH} $ENV{ROCM_PATH})
-if(NOT ROCM_FOUND)
-  set(PROJECT_EXTERN_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps")
-  file( TO_NATIVE_PATH "${PROJECT_EXTERN_DIR}" PROJECT_EXTERN_DIR_NATIVE)
-  set(rocm_cmake_tag "master" CACHE STRING "rocm-cmake tag to download")
-  file(
-      DOWNLOAD https://github.com/RadeonOpenCompute/rocm-cmake/archive/${rocm_cmake_tag}.tar.gz
-      ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag}.tar.gz
-      STATUS rocm_cmake_download_status LOG rocm_cmake_download_log
-  )
-  list(GET rocm_cmake_download_status 0 rocm_cmake_download_error_code)
-  if(rocm_cmake_download_error_code)
-      message(FATAL_ERROR "Error: downloading "
-          "https://github.com/RadeonOpenCompute/rocm-cmake/archive/${rocm_cmake_tag}.zip failed "
-          "error_code: ${rocm_cmake_download_error_code} "
-          "log: ${rocm_cmake_download_log} "
-      )
-  endif()
+# CUDA Toolkit (replaces find_package(HIP)/find_package(rocprim))
+find_package(CUDAToolkit REQUIRED)
+message(STATUS "CUDA Toolkit version: ${CUDAToolkit_VERSION}")
+message(STATUS "CUDA Toolkit include dirs: ${CUDAToolkit_INCLUDE_DIRS}")
+message(STATUS "CUDA Toolkit library dir: ${CUDAToolkit_LIBRARY_DIR}")
 
-  execute_process(
-      COMMAND ${CMAKE_COMMAND} -E tar xzvf ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag}.tar.gz
-      WORKING_DIRECTORY ${PROJECT_EXTERN_DIR}
-  )
-  execute_process(
-      COMMAND ${CMAKE_COMMAND} -S ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag} -B ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag}/build
-      WORKING_DIRECTORY ${PROJECT_EXTERN_DIR}
-  )
-  execute_process(
-      COMMAND ${CMAKE_COMMAND} --install ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag}/build --prefix ${PROJECT_EXTERN_DIR}/rocm
-      WORKING_DIRECTORY ${PROJECT_EXTERN_DIR} )
-  if(rocm_cmake_unpack_error_code)
-      message(FATAL_ERROR "Error: unpacking ${CMAKE_CURRENT_BINARY_DIR}/rocm-cmake-${rocm_cmake_tag}.zip failed")
+# NVTX target resolution (replaces the roctracer/roctx find_library +
+# add_library(IMPORTED) block). Prefer the header-only NVTX v3 target when
+# available, falling back to the legacy imported target otherwise.
+if(OPT_NVTX)
+  if(TARGET CUDA::nvtx3)
+    set(HPCG_NVTX_TARGET CUDA::nvtx3)
+  elseif(TARGET CUDA::nvToolsExt)
+    set(HPCG_NVTX_TARGET CUDA::nvToolsExt)
+  else()
+    message(FATAL_ERROR "OPT_NVTX was requested but neither CUDA::nvtx3 nor "
+                         "CUDA::nvToolsExt is available from this CUDAToolkit "
+                         "CMake package.")
   endif()
-  find_package(ROCM 0.7.3 REQUIRED CONFIG PATHS ${PROJECT_EXTERN_DIR})
+  message(STATUS "NVTX target: ${HPCG_NVTX_TARGET}")
 endif()
-
-include(ROCMSetupVersion)
-include(ROCMCreatePackage)
-include(ROCMInstallTargets)
-include(ROCMPackageConfigHelpers)
-include(ROCMInstallSymlinks)
-include(ROCMCheckTargetIds)
-include(ROCMClients)

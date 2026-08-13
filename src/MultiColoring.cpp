@@ -35,8 +35,11 @@
 #include "utils.hpp"
 #include "MultiColoring.hpp"
 
-#include <hip/hip_runtime.h>
-#include <rocprim/rocprim.hpp>
+#include <cuda_runtime.h>
+// CUB is the CUDA-native equivalent of rocPRIM (rocPRIM was explicitly
+// designed to be CUB-API-compatible); it ships header-only with the CUDA
+// Toolkit, so no separate find_package/link target is required.
+#include <cub/cub.cuh>
 
 #define LAUNCH_JPL(blocksizex, blocksizey)                             \
     {                                                                  \
@@ -188,7 +191,7 @@ __global__ void kernel_jpl(index_int_t m,
     local_int_t row_hash = hash[row];
 
     local_int_t idx = (local_int_t)row * BLOCKSIZEX + threadIdx.x;
-    index_int_t col = __builtin_nontemporal_load(mtxIndL + idx);
+    index_int_t col = __ldcs(mtxIndL + idx);
 
     if(col >= 0 && col < m)
     {
@@ -240,7 +243,7 @@ void JPLColoring(SparseMatrix& A)
     index_int_t m = A.localNumberOfRows;
 
     HIP_CHECK(deviceMalloc((void**)&A.perm, sizeof(index_int_t) * m));
-    HIP_CHECK(hipMemset(A.perm, -1, sizeof(index_int_t) * m));
+    HIP_CHECK(cudaMemset(A.perm, -1, sizeof(index_int_t) * m));
 
     A.nblocks = 0;
 
@@ -294,13 +297,13 @@ void JPLColoring(SparseMatrix& A)
         kernel_count_color_part2<256><<<1, 256>>>(tmp);
 
         // Copy colored max vertices for current iteration to host
-        HIP_CHECK(hipMemcpy(&A.sizes[A.nblocks], tmp, sizeof(index_int_t), hipMemcpyDeviceToHost));
+        HIP_CHECK(cudaMemcpy(&A.sizes[A.nblocks], tmp, sizeof(index_int_t), cudaMemcpyDeviceToHost));
 
         kernel_count_color_part1<256><<<256, 256>>>(m, color2, A.perm, tmp);
         kernel_count_color_part2<256><<<1, 256>>>(tmp);
 
         // Copy colored min vertices for current iteration to host
-        HIP_CHECK(hipMemcpy(&A.sizes[A.nblocks + 1], tmp, sizeof(index_int_t), hipMemcpyDeviceToHost));
+        HIP_CHECK(cudaMemcpy(&A.sizes[A.nblocks + 1], tmp, sizeof(index_int_t), cudaMemcpyDeviceToHost));
 
         // Total number of colored vertices after max
         colored += A.sizes[A.nblocks];
@@ -327,8 +330,8 @@ void JPLColoring(SparseMatrix& A)
 
     kernel_identity<1024><<<(m - 1) / 1024 + 1, 1024>>>(m, perm);
 
-    rocprim::double_buffer<index_int_t> keys(A.perm, tmp_color);
-    rocprim::double_buffer<index_int_t> vals(perm, tmp_perm);
+    cub::DoubleBuffer<index_int_t> keys(A.perm, tmp_color);
+    cub::DoubleBuffer<index_int_t> vals(perm, tmp_perm);
 
     size_t size;
     void* buf = NULL;
@@ -336,9 +339,9 @@ void JPLColoring(SparseMatrix& A)
     int startbit = 0;
     int endbit = 32 - __builtin_clz(A.nblocks);
 
-    HIP_CHECK(rocprim::radix_sort_pairs(buf, size, keys, vals, m, startbit, endbit));
+    HIP_CHECK(cub::DeviceRadixSort::SortPairs(buf, size, keys, vals, m, startbit, endbit));
     HIP_CHECK(deviceMalloc(&buf, size));
-    HIP_CHECK(rocprim::radix_sort_pairs(buf, size, keys, vals, m, startbit, endbit));
+    HIP_CHECK(cub::DeviceRadixSort::SortPairs(buf, size, keys, vals, m, startbit, endbit));
     HIP_CHECK(deviceFree(buf));
 
     kernel_create_perm<1024><<<(m - 1) / 1024 + 1, 1024>>>(m, vals.current(), A.perm);

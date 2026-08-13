@@ -35,7 +35,7 @@
 #include "utils.hpp"
 #include "Permute.hpp"
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 #define LAUNCH_PERM_COLS(blocksizex, blocksizey)                       \
     {                                                                  \
@@ -77,8 +77,12 @@ __global__ void kernel_permute_ell_rows(index_int_t m,
 
 __device__ void swap(index_int_t& key, double& val, int mask, int dir)
 {
-    index_int_t key1 = __shfl_xor(key, mask);
-    double val1 = __shfl_xor(val, mask);
+    // CUDA's __shfl_xor_sync requires an explicit active-lane mask argument
+    // (unlike HIP's 2-arg __shfl_xor); this code always runs in lockstep
+    // across a full warp at the call sites in kernel_perm_cols, so a full
+    // mask is correct here.
+    index_int_t key1 = __shfl_xor_sync(0xFFFFFFFFu, key, mask);
+    double val1 = __shfl_xor_sync(0xFFFFFFFFu, val, mask);
 
     if(key < key1 == dir)
     {
@@ -200,8 +204,8 @@ void PermuteRows(SparseMatrix& A)
     {
         local_int_t offset = (local_int_t)p * m;
 
-        HIP_CHECK(hipMemcpy(tmp_cols, A.ell_col_ind + offset, sizeof(index_int_t) * m, hipMemcpyDeviceToDevice));
-        HIP_CHECK(hipMemcpy(tmp_vals, A.ell_val + offset, sizeof(double) * m, hipMemcpyDeviceToDevice));
+        HIP_CHECK(cudaMemcpy(tmp_cols, A.ell_col_ind + offset, sizeof(index_int_t) * m, cudaMemcpyDeviceToDevice));
+        HIP_CHECK(cudaMemcpy(tmp_vals, A.ell_val + offset, sizeof(double) * m, cudaMemcpyDeviceToDevice));
 
         kernel_permute_ell_rows<1024><<<(m - 1) / 1024 + 1, 1024>>>(
             m,

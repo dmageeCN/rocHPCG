@@ -34,7 +34,7 @@
 
 #include <gtest/gtest.h>
 #include <vector>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #ifndef HPCG_NO_MPI
 #include <mpi.h>
@@ -140,8 +140,8 @@ TEST_P(parameterized_rochpcg, rochpcg)
   sprintf(hpcg_argv[5], "--dev=%d", device_id);
 
   // Do not exceed available device memory
-  hipDeviceProp_t prop;
-  hipGetDeviceProperties(&prop, device_id);
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, device_id);
 
   size_t total_mem = prop.totalGlobalMem >> 30;
 

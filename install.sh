@@ -16,13 +16,13 @@ function display_help()
   echo "    [-r|--reference] reference mode"
   echo "    [-g|--debug] -DCMAKE_BUILD_TYPE=Debug (default: Release)"
   echo "    [-t|--test] build single GPU test"
-  echo "    [--with-rocm=<dir>] Path to ROCm install (default: /opt/rocm)"
+  echo "    [--with-cuda=<dir>] Path to CUDA Toolkit install (default: /usr/local/cuda)"
   echo "    [--with-mpi=<dir>] Path to external MPI install (Default: clone+build OpenMPI v4.1.0 in deps/)"
   echo "    [--gpu-aware-mpi] MPI library supports GPU-aware communication (Default: false)"
   echo "    [--with-openmp] compile with OpenMP support (default: enabled)"
   echo "    [--with-memmgmt] compile with smart memory management (default: enabled)"
   echo "    [--with-memdefrag] compile with memory defragmentation (defaut: enabled)"
-  echo "    [--with-roctx] enable rocTX markers (default: false)"
+  echo "    [--with-nvtx] enable NVTX markers (default: false)"
 }
 
 # This function is helpful for dockerfiles that do not have sudo installed, but the default user is root
@@ -184,7 +184,7 @@ install_openmpi( )
     git clone --branch v1.13.1 https://github.com/openucx/ucx.git ucx
     cd ucx; ./autogen.sh; ./autogen.sh #why do we have to run this twice?
     mkdir build; cd build
-    ../contrib/configure-opt --prefix=${PWD}/../ --with-rocm=${with_rocm} --without-knem --without-cuda --without-java
+    ../contrib/configure-opt --prefix=${PWD}/../ --with-cuda=${with_cuda} --without-rocm --without-knem --without-java
     make -j$(nproc); make install; cd ../../..
   fi
 
@@ -231,13 +231,13 @@ install_prefix=rochpcg-install
 build_release=true
 build_reference=false
 build_test=false
-with_rocm=/opt/rocm
+with_cuda=/usr/local/cuda
 with_mpi=deps/openmpi
 gpu_aware_mpi=OFF
 with_omp=ON
 with_memmgmt=ON
 with_memdefrag=ON
-with_roctx=false
+with_nvtx=false
 
 # #################################################
 # Parameter parsing
@@ -246,7 +246,7 @@ with_roctx=false
 # check if we have a modern version of getopt that can handle whitespace and long parameters
 getopt -T
 if [[ $? -eq 4 ]]; then
-  GETOPT_PARSE=$(getopt --name "${0}" --longoptions help,install,dependencies,reference,debug,test,with-rocm:,with-mpi:,gpu-aware-mpi:,with-openmp:,with-memmgmt:,with-memdefrag:,with-roctx --options hidrgt -- "$@")
+  GETOPT_PARSE=$(getopt --name "${0}" --longoptions help,install,dependencies,reference,debug,test,with-cuda:,with-mpi:,gpu-aware-mpi:,with-openmp:,with-memmgmt:,with-memdefrag:,with-nvtx --options hidrgt -- "$@")
 else
   echo "Need a new version of getopt"
   exit 1
@@ -280,8 +280,8 @@ while true; do
     -t|--test)
         build_test=true
         shift ;;
-    --with-rocm)
-        with_rocm=${2}
+    --with-cuda)
+        with_cuda=${2}
         shift 2 ;;
     --with-mpi)
         with_mpi=${2}
@@ -298,8 +298,8 @@ while true; do
     --with-memdefrag)
         with_memdefrag=${2}
         shift 2 ;;
-    --with-roctx)
-	with_roctx=true
+    --with-nvtx)
+	with_nvtx=true
 	shift ;;
     --) shift ; break ;;
     *)  echo "Unexpected command line parameter received; aborting";
@@ -337,10 +337,10 @@ if [[ "${install_dependencies}" == true ]]; then
   install_packages
 fi
 
-# We append customary rocm path; if user provides custom rocm path in ${path}, our
+# We append customary CUDA path; if user provides custom CUDA path in ${path}, our
 # hard-coded path has lesser priority
-export ROCM_PATH=${with_rocm}
-export PATH=${PATH}:${ROCM_PATH}/bin
+export CUDA_PATH=${with_cuda}
+export PATH=${PATH}:${CUDA_PATH}/bin
 
 pushd .
 
@@ -354,7 +354,7 @@ pushd .
   # #################################################
   # configure & build
   # #################################################
-  cmake_common_options="-DHPCG_OPENMP=${with_omp} -DOPT_MEMMGMT=${with_memmgmt} -DOPT_DEFRAG=${with_memdefrag} -DOPT_ROCTX=${with_roctx}"
+  cmake_common_options="-DHPCG_OPENMP=${with_omp} -DOPT_MEMMGMT=${with_memmgmt} -DOPT_DEFRAG=${with_memdefrag} -DOPT_NVTX=${with_nvtx}"
 
   shopt -s nocasematch
   # gpu aware mpi
@@ -388,12 +388,12 @@ pushd .
     cmake_common_options="${cmake_common_options} -DBUILD_TEST=ON"
   fi
 
-  # Build library with AMD toolchain because of existense of device kernels
+  # Configure and build with the CUDA-native CMake toolchain (nvcc compiles
+  # the *.cpp files marked LANGUAGE CUDA, i.e. those containing __global__ kernels).
   ${cmake_executable} ${cmake_common_options} \
     -DCPACK_SET_DESTDIR=OFF \
     -DCMAKE_INSTALL_PREFIX=${install_prefix} \
-    -DCPACK_PACKAGING_INSTALL_PREFIX=${with_rocm} \
-    -DROCM_PATH="${with_rocm}" ../..
+    -DCUDAToolkit_ROOT=${with_cuda} ../..
   check_exit_code
 
   if [[ "${build_test}" == false ]]; then

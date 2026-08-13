@@ -49,7 +49,7 @@
 #include "ComputeSYMGS.hpp"
 #include "ExchangeHalo.hpp"
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 #define LAUNCH_SYMGS_SWEEP(blocksize, width)                        \
     {                                                               \
@@ -132,22 +132,22 @@ __global__ void kernel_symgs_sweep(index_int_t m,
     index_int_t row = gid + offset;
     local_int_t idx = row;
 
-    double sum = __builtin_nontemporal_load(x + row);
+    double sum = __ldcs(x + row);
 
 #pragma unroll
     for(index_int_t p = 0; p < WIDTH; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(ell_col_ind + idx);
+        index_int_t col = __ldcs(ell_col_ind + idx);
 
         if(col >= 0 && col < n && col != row)
         {
-            sum = fma(-__builtin_nontemporal_load(ell_val + idx), y[col], sum);
+            sum = fma(-__ldcs(ell_val + idx), y[col], sum);
         }
 
         idx += m;
     }
 
-    __builtin_nontemporal_store(sum * __builtin_nontemporal_load(inv_diag + row), y + row);
+    __stcs(y + row, sum * __ldcs(inv_diag + row));
 }
 
 template <unsigned int BLOCKSIZE, unsigned int WIDTH>
@@ -169,22 +169,22 @@ __global__ void kernel_symgs_interior(index_int_t m,
 
     local_int_t idx = row;
 
-    double sum = __builtin_nontemporal_load(x + row);
+    double sum = __ldcs(x + row);
 
 #pragma unroll
     for(index_int_t p = 0; p < WIDTH; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(ell_col_ind + idx);
+        index_int_t col = __ldcs(ell_col_ind + idx);
 
         if(col >= 0 && col < m && col != row)
         {
-            sum = fma(-__builtin_nontemporal_load(ell_val + idx), __ldg(y + col), sum);
+            sum = fma(-__ldcs(ell_val + idx), __ldg(y + col), sum);
         }
 
         idx += m;
     }
 
-    __builtin_nontemporal_store(sum * __builtin_nontemporal_load(inv_diag + row), y + row);
+    __stcs(y + row, sum * __ldcs(inv_diag + row));
 }
 
 template <unsigned int BLOCKSIZE, unsigned int WIDTH>
@@ -207,7 +207,7 @@ __global__ void kernel_symgs_halo(index_int_t m,
         return;
     }
 
-    index_int_t halo_idx = __builtin_nontemporal_load(halo_row_ind + row);
+    index_int_t halo_idx = __ldcs(halo_row_ind + row);
     index_int_t perm_idx = perm[halo_idx];
 
     if(perm_idx >= block_nrow)
@@ -222,11 +222,11 @@ __global__ void kernel_symgs_halo(index_int_t m,
 #pragma unroll
     for(index_int_t p = 0; p < WIDTH; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(halo_col_ind + idx);
+        index_int_t col = __ldcs(halo_col_ind + idx);
 
         if(col >= 0 && col < n)
         {
-            sum = fma(-__builtin_nontemporal_load(halo_val + idx), y[col], sum);
+            sum = fma(-__ldcs(halo_val + idx), y[col], sum);
         }
 
         idx += m;
@@ -272,26 +272,26 @@ __global__ void kernel_forward_sweep_0(index_int_t m,
 
     index_int_t row  = gid + offset;
     local_int_t idx  = row;
-    index_int_t diag = __builtin_nontemporal_load(diag_idx + row);
+    index_int_t diag = __ldcs(diag_idx + row);
 
-    double sum = __builtin_nontemporal_load(x + row);
+    double sum = __ldcs(x + row);
 
     for(index_int_t p = 0; p < diag; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(ell_col_ind + idx);
+        index_int_t col = __ldcs(ell_col_ind + idx);
 
         // Every entry above offset is zero
         if(col >= 0 && col < offset)
         {
-            sum = fma(-__builtin_nontemporal_load(ell_val + idx), y[col], sum);
+            sum = fma(-__ldcs(ell_val + idx), y[col], sum);
         }
 
         idx += m;
     }
 
-    sum *= __drcp_rn(__builtin_nontemporal_load(ell_val + idx));
+    sum *= __drcp_rn(__ldcs(ell_val + idx));
 
-    __builtin_nontemporal_store(sum, y + row);
+    __stcs(y + row, sum);
 }
 
 template <unsigned int BLOCKSIZE>
@@ -313,10 +313,10 @@ __global__ void kernel_backward_sweep_0(index_int_t m,
     }
 
     index_int_t row  = gid + offset;
-    index_int_t diag = __builtin_nontemporal_load(diag_idx + row);
+    index_int_t diag = __ldcs(diag_idx + row);
     local_int_t idx  = (local_int_t)diag * m + row;
 
-    double diag_val = __builtin_nontemporal_load(ell_val + idx);
+    double diag_val = __ldcs(ell_val + idx);
     idx += m;
 
     // Scale result with diagonal entry
@@ -324,12 +324,12 @@ __global__ void kernel_backward_sweep_0(index_int_t m,
 
     for(index_int_t p = diag + 1; p < ell_width; ++p)
     {
-        index_int_t col = __builtin_nontemporal_load(ell_col_ind + idx);
+        index_int_t col = __ldcs(ell_col_ind + idx);
 
         // Every entry below offset should not be taken into account
         if(col >= offset && col < m)
         {
-            sum = fma(-__builtin_nontemporal_load(ell_val + idx), x[col], sum);
+            sum = fma(-__ldcs(ell_val + idx), x[col], sum);
         }
 
         idx += m;
@@ -337,7 +337,7 @@ __global__ void kernel_backward_sweep_0(index_int_t m,
 
     sum *= __drcp_rn(diag_val);
 
-    __builtin_nontemporal_store(sum, x + row);
+    __stcs(x + row, sum);
 }
 
 /*!

@@ -50,8 +50,8 @@
 
 #include <cmath>
 
-#ifdef OPT_ROCTX
-#include <roctracer/roctx.h>
+#ifdef OPT_NVTX
+#include <nvtx3/nvToolsExt.h>
 #endif
 
 #include "hpcg.hpp"
@@ -65,20 +65,20 @@
 
 
 // Use TICK and TOCK to time a code section in MATLAB-like fashion
-#ifdef OPT_ROCTX // add roctx in TICK/TOCK
+#ifdef OPT_NVTX // add NVTX markers in TICK/TOCK
 #ifndef HPCG_NO_MPI
-#define TICK(x)  HIP_CHECK(hipDeviceSynchronize()); MPI_Barrier(MPI_COMM_WORLD); t0 = mytimer(); roctxRangePush(x) //!< record current time in 't0'
+#define TICK(x)  HIP_CHECK(cudaDeviceSynchronize()); MPI_Barrier(MPI_COMM_WORLD); t0 = mytimer(); nvtxRangePushA(x) //!< record current time in 't0'
 #else
-#define TICK(x)  HIP_CHECK(hipDeviceSynchronize()); t0 = mytimer(); roctxRangePush(x) //!< record current time in 't0'
+#define TICK(x)  HIP_CHECK(cudaDeviceSynchronize()); t0 = mytimer(); nvtxRangePushA(x) //!< record current time in 't0'
 #endif
-#define TOCK(t) HIP_CHECK(hipDeviceSynchronize()); roctxRangePop(); t += mytimer() - t0 //!< store time difference in 't' using time in 't0'
+#define TOCK(t) HIP_CHECK(cudaDeviceSynchronize()); nvtxRangePop(); t += mytimer() - t0 //!< store time difference in 't' using time in 't0'
 #else // don't include markers
 #ifndef HPCG_NO_MPI
-#define TICK(x)  HIP_CHECK(hipDeviceSynchronize()); MPI_Barrier(MPI_COMM_WORLD); t0 = mytimer() //!< record current time in 't0'
+#define TICK(x)  HIP_CHECK(cudaDeviceSynchronize()); MPI_Barrier(MPI_COMM_WORLD); t0 = mytimer() //!< record current time in 't0'
 #else
-#define TICK(x)  HIP_CHECK(hipDeviceSynchronize()); t0 = mytimer() //!< record current time in 't0'
+#define TICK(x)  HIP_CHECK(cudaDeviceSynchronize()); t0 = mytimer() //!< record current time in 't0'
 #endif
-#define TOCK(t) HIP_CHECK(hipDeviceSynchronize()); t += mytimer() - t0 //!< store time difference in 't' using time in 't0'
+#define TOCK(t) HIP_CHECK(cudaDeviceSynchronize()); t += mytimer() - t0 //!< store time difference in 't' using time in 't0'
 #endif
 
 /*!
@@ -104,8 +104,8 @@
 int CG(const SparseMatrix & A, CGData & data, const Vector & b, Vector & x,
     const int max_iter, const double tolerance, int & niters, double & normr, double & normr0,
     double * times, bool doPreconditioning, bool verbose) {
-#ifdef OPT_ROCTX
-  roctxRangePush("Total Time");
+#ifdef OPT_NVTX
+  nvtxRangePushA("Total Time");
 #endif
   double t_begin = mytimer();  // Start timing right away
   normr = 0.0;
@@ -192,8 +192,8 @@ int CG(const SparseMatrix & A, CGData & data, const Vector & b, Vector & x,
 //#ifndef HPCG_NO_MPI
 //  times[6] += t6; // exchange halo time
 //#endif
-#ifdef OPT_ROCTX
-  roctxRangePop(); // Total Time
+#ifdef OPT_NVTX
+  nvtxRangePop(); // Total Time
 #endif
   times[0] += mytimer() - t_begin;  // Total time. All done...
   return 0;

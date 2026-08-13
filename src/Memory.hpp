@@ -38,33 +38,33 @@
 #include <cstdlib>
 #include <list>
 #include <string>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #include "Geometry.hpp"
 
-struct hipMemObject_t
+struct cudaMemObject_t
 {
     size_t size;
     char* address;
 };
 
-class hipAllocator_t
+class cudaAllocator_t
 {
     public:
 
-    hipAllocator_t(void);
-    ~hipAllocator_t(void);
+    cudaAllocator_t(void);
+    ~cudaAllocator_t(void);
 
-    hipError_t Initialize(int rank,
+    cudaError_t Initialize(int rank,
                           int nprocs,
                           index_int_t nx,
                           index_int_t ny,
                           index_int_t nz);
-    hipError_t Clear(void);
+    cudaError_t Clear(void);
 
-    hipError_t Alloc(void** ptr, size_t size);
-    hipError_t Realloc(void* ptr, size_t size);
-    hipError_t Free(void* ptr);
+    cudaError_t Alloc(void** ptr, size_t size);
+    cudaError_t Realloc(void* ptr, size_t size);
+    cudaError_t Free(void* ptr);
 
     inline size_t GetFreeMemory(void) const { return this->free_mem_; }
     inline size_t GetUsedMemory(void) const { return this->used_mem_; }
@@ -94,12 +94,12 @@ class hipAllocator_t
     char* buffer_;
 
     // List to keep track of allocations
-    std::list<hipMemObject_t*> objects_;
+    std::list<cudaMemObject_t*> objects_;
 };
 
-hipError_t deviceMalloc(void** ptr, size_t size);
-hipError_t deviceRealloc(void* ptr, size_t size);
-hipError_t deviceDefrag(void** ptr, size_t size);
-hipError_t deviceFree(void* ptr);
+cudaError_t deviceMalloc(void** ptr, size_t size);
+cudaError_t deviceRealloc(void* ptr, size_t size);
+cudaError_t deviceDefrag(void** ptr, size_t size);
+cudaError_t deviceFree(void* ptr);
 
 #endif // MEMORY_HPP

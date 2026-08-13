@@ -54,10 +54,10 @@
 #include "utils.hpp"
 #include "ComputeDotProduct.hpp"
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
-#ifdef OPT_ROCTX
-#include <roctracer/roctx.h>
+#ifdef OPT_NVTX
+#include <nvtx3/nvToolsExt.h>
 #endif
 
 template <unsigned int BLOCKSIZE>
@@ -213,19 +213,19 @@ int ComputeDotProduct(local_int_t n,
     }
 
     double local_result;
-    HIP_CHECK(hipMemcpyAsync(&local_result, tmp, sizeof(double), hipMemcpyDeviceToHost, stream_interior));
-    HIP_CHECK(hipStreamSynchronize(stream_interior));
+    HIP_CHECK(cudaMemcpyAsync(&local_result, tmp, sizeof(double), cudaMemcpyDeviceToHost, stream_interior));
+    HIP_CHECK(cudaStreamSynchronize(stream_interior));
 
 #ifndef HPCG_NO_MPI
     double t0 = mytimer();
     double global_result = 0.0;
 
-#ifdef OPT_ROCTX
-    roctxRangePush("MPI AllReduce");
+#ifdef OPT_NVTX
+    nvtxRangePushA("MPI AllReduce");
 #endif
     MPI_Allreduce(&local_result, &global_result, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-#ifdef OPT_ROCTX
-    roctxRangePop();
+#ifdef OPT_NVTX
+    nvtxRangePop();
 #endif
 
     result = global_result;

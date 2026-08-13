@@ -41,7 +41,7 @@
  * ************************************************************************ */
 
 #include <fstream>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #include "utils.hpp"
 #include "hpcg.hpp"
@@ -58,11 +58,11 @@ HPCG_Finalize(void) {
   HPCG_fout.close();
 
   // Destroy streams
-  HIP_CHECK(hipStreamDestroy(stream_interior));
-  HIP_CHECK(hipStreamDestroy(stream_halo));
+  HIP_CHECK(cudaStreamDestroy(stream_interior));
+  HIP_CHECK(cudaStreamDestroy(stream_halo));
 
   // Destroy events
-  HIP_CHECK(hipEventDestroy(halo_gather));
+  HIP_CHECK(cudaEventDestroy(halo_gather));
 
   // Free workspace
   HIP_CHECK(deviceFree(workspace));
@@ -73,7 +73,7 @@ HPCG_Finalize(void) {
 #endif
 
   // Reset HIP device
-  HIP_CHECK(hipDeviceReset());
+  HIP_CHECK(cudaDeviceReset());
 
   return 0;
 }

@@ -56,7 +56,7 @@
 
 #include <vector>
 #include <cassert>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #include "utils.hpp"
 #include "Geometry.hpp"
@@ -297,12 +297,12 @@ inline void DeleteMatrix(SparseMatrix & A) {
 
   if(A.recv_buffer)
   {
-    HIP_CHECK(hipHostUnregister(A.recv_buffer));
+    HIP_CHECK(cudaHostUnregister(A.recv_buffer));
     numa_free(A.recv_buffer, sizeof(double) * A.totalToBeSent);
   }
   if(A.send_buffer)
   {
-    HIP_CHECK(hipHostUnregister(A.send_buffer));
+    HIP_CHECK(cudaHostUnregister(A.send_buffer));
     numa_free(A.send_buffer, sizeof(double) * A.totalToBeSent);
   }
   if(A.d_send_buffer) HIP_CHECK(deviceFree(A.d_send_buffer));

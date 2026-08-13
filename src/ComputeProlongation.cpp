@@ -34,7 +34,7 @@
 
 #include "ComputeProlongation.hpp"
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
 template <unsigned int BLOCKSIZE>
 __launch_bounds__(BLOCKSIZE)
@@ -52,8 +52,8 @@ __global__ void kernel_prolongation(index_int_t size,
         return;
     }
 
-    index_int_t idx_fine = __builtin_nontemporal_load(f2cOperator + idx_coarse);
-    index_int_t idx_perm = __builtin_nontemporal_load(perm_coarse + idx_coarse);
+    index_int_t idx_fine = __ldcs(f2cOperator + idx_coarse);
+    index_int_t idx_perm = __ldcs(perm_coarse + idx_coarse);
 
     fine[perm_fine[idx_fine]] += coarse[idx_perm];
 }

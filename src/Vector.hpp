@@ -51,7 +51,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <vector>
-#include <hip/hip_runtime_api.h>
+#include <cuda_runtime_api.h>
 
 #include "utils.hpp"
 #include "Geometry.hpp"
@@ -103,7 +103,7 @@ inline void ZeroVector(Vector & v) {
 
 inline void HIPZeroVector(Vector& v)
 {
-    HIP_CHECK(hipMemsetAsync(v.d_values, 0, sizeof(double) * v.localLength, stream_interior));
+    HIP_CHECK(cudaMemsetAsync(v.d_values, 0, sizeof(double) * v.localLength, stream_interior));
 }
 
 /*!
@@ -139,10 +139,10 @@ inline void HIPFillRandomVector(Vector& v)
     rng[i] = rand() / (double)(RAND_MAX) + 1.0;
   }
 
-  HIP_CHECK(hipMemcpy(v.d_values,
+  HIP_CHECK(cudaMemcpy(v.d_values,
                       rng.data(),
                       sizeof(double) * v.localLength,
-                      hipMemcpyHostToDevice));
+                      cudaMemcpyHostToDevice));
 }
 
 /*!
@@ -162,10 +162,10 @@ inline void CopyVector(const Vector & v, Vector & w) {
 
 inline void HIPCopyVector(const Vector& v, Vector& w)
 {
-    HIP_CHECK(hipMemcpyAsync(w.d_values,
+    HIP_CHECK(cudaMemcpyAsync(w.d_values,
                              v.d_values,
                              sizeof(double) * v.localLength,
-                             hipMemcpyDeviceToDevice,
+                             cudaMemcpyDeviceToDevice,
                              stream_interior));
 }
 

@@ -51,10 +51,10 @@
 
 #include "ComputeResidual.hpp"
 
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
-#ifdef OPT_ROCTX
-#include <roctracer/roctx.h>
+#ifdef OPT_NVTX
+#include <nvtx3/nvToolsExt.h>
 #endif
 
 template <unsigned int BLOCKSIZE>
@@ -129,18 +129,18 @@ int ComputeResidual(local_int_t n, const Vector& v1, const Vector& v2, double& r
     kernel_residual_part2<256><<<1, 256, 0, stream_interior>>>(tmp);
 
     double local_residual;
-    HIP_CHECK(hipMemcpyAsync(&local_residual, tmp, sizeof(double), hipMemcpyDeviceToHost, stream_interior));
-    HIP_CHECK(hipStreamSynchronize(stream_interior));
+    HIP_CHECK(cudaMemcpyAsync(&local_residual, tmp, sizeof(double), cudaMemcpyDeviceToHost, stream_interior));
+    HIP_CHECK(cudaStreamSynchronize(stream_interior));
 
 #ifndef HPCG_NO_MPI
     double global_residual = 0.0;
 
-#ifdef OPT_ROCTX
-    roctxRangePush("MPI AllReduce");
+#ifdef OPT_NVTX
+    nvtxRangePushA("MPI AllReduce");
 #endif
     MPI_Allreduce(&local_residual, &global_residual, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-#ifdef OPT_ROCTX
-    roctxRangePop();
+#ifdef OPT_NVTX
+    nvtxRangePop();
 #endif
 
     residual = global_residual;

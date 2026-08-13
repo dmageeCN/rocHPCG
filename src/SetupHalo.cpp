@@ -51,8 +51,10 @@
 #include <numa.h>
 #endif
 
-#include <hip/hip_runtime.h>
-#include <rocprim/rocprim.hpp>
+#include <cuda_runtime.h>
+// CUB is the CUDA-native equivalent of rocPRIM; ships header-only with the
+// CUDA Toolkit, no separate find_package/link target required.
+#include <cub/cub.cuh>
 
 #include "utils.hpp"
 #include "SetupHalo.hpp"
@@ -369,8 +371,8 @@ void SetupHalo(SparseMatrix& A)
     HIP_CHECK(deviceMalloc((void**)&d_nrecv_per_rank, sizeof(index_int_t) * max_neighbors));
 
     // Since we use increments, we have to initialize with 0
-    HIP_CHECK(hipMemset(d_nsend_per_rank, 0, sizeof(index_int_t) * max_neighbors));
-    HIP_CHECK(hipMemset(d_nrecv_per_rank, 0, sizeof(index_int_t) * max_neighbors));
+    HIP_CHECK(cudaMemset(d_nsend_per_rank, 0, sizeof(index_int_t) * max_neighbors));
+    HIP_CHECK(cudaMemset(d_nrecv_per_rank, 0, sizeof(index_int_t) * max_neighbors));
 
     // Array to store the neighboring process ids
     int* d_neighbors;
@@ -398,10 +400,10 @@ void SetupHalo(SparseMatrix& A)
 
     // Prefix sum to obtain send index offsets
     std::vector<index_int_t> nsend_per_rank(max_neighbors + 1);
-    HIP_CHECK(hipMemcpy(nsend_per_rank.data() + 1,
+    HIP_CHECK(cudaMemcpy(nsend_per_rank.data() + 1,
                         d_nsend_per_rank,
                         sizeof(index_int_t) * max_neighbors,
-                        hipMemcpyDeviceToHost));
+                        cudaMemcpyDeviceToHost));
     HIP_CHECK(deviceFree(d_nsend_per_rank));
 
     nsend_per_rank[0] = 0;
@@ -424,8 +426,8 @@ void SetupHalo(SparseMatrix& A)
     NULL_CHECK(A.recv_buffer);
     NULL_CHECK(A.send_buffer);
 
-    HIP_CHECK(hipHostRegister(A.recv_buffer, sizeof(double) * A.totalToBeSent, hipHostRegisterDefault));
-    HIP_CHECK(hipHostRegister(A.send_buffer, sizeof(double) * A.totalToBeSent, hipHostRegisterDefault));
+    HIP_CHECK(cudaHostRegister(A.recv_buffer, sizeof(double) * A.totalToBeSent, cudaHostRegisterDefault));
+    HIP_CHECK(cudaHostRegister(A.send_buffer, sizeof(double) * A.totalToBeSent, cudaHostRegisterDefault));
 
     HIP_CHECK(deviceMalloc((void**)&A.d_send_buffer, sizeof(double) * A.totalToBeSent));
 
@@ -450,25 +452,25 @@ void SetupHalo(SparseMatrix& A)
             continue;
         }
 
-        size_t rocprim_size;
-        void* rocprim_buffer = NULL;
+        size_t cub_size;
+        void* cub_buffer = NULL;
 
         // Obtain buffer size
-        HIP_CHECK(rocprim::radix_sort_keys(rocprim_buffer,
-                                           rocprim_size,
+        HIP_CHECK(cub::DeviceRadixSort::SortKeys(cub_buffer,
+                                           cub_size,
                                            d_send_indices + i * max_sending,
                                            A.d_elementsToSend + nsend_per_rank[i],
                                            entriesToSend));
-        HIP_CHECK(deviceMalloc(&rocprim_buffer, rocprim_size));
+        HIP_CHECK(deviceMalloc(&cub_buffer, cub_size));
 
         // Sort send indices to obtain increasing order
-        HIP_CHECK(rocprim::radix_sort_keys(rocprim_buffer,
-                                           rocprim_size,
+        HIP_CHECK(cub::DeviceRadixSort::SortKeys(cub_buffer,
+                                           cub_size,
                                            d_send_indices + i * max_sending,
                                            A.d_elementsToSend + nsend_per_rank[i],
                                            entriesToSend));
-        HIP_CHECK(deviceFree(rocprim_buffer));
-        rocprim_buffer = NULL;
+        HIP_CHECK(deviceFree(cub_buffer));
+        cub_buffer = NULL;
 
         // Store number of elements that have to be sent to i-th process
         A.sendLength[A.numberOfSendNeighbors++] = entriesToSend;
@@ -479,10 +481,10 @@ void SetupHalo(SparseMatrix& A)
 
     // Prefix sum to obtain receive indices offsets (with duplicates)
     std::vector<index_int_t> nrecv_per_rank(max_neighbors + 1);
-    HIP_CHECK(hipMemcpy(nrecv_per_rank.data() + 1,
+    HIP_CHECK(cudaMemcpy(nrecv_per_rank.data() + 1,
                         d_nrecv_per_rank,
                         sizeof(index_int_t) * max_neighbors,
-                        hipMemcpyDeviceToHost));
+                        cudaMemcpyDeviceToHost));
     HIP_CHECK(deviceFree(d_nrecv_per_rank));
 
     nrecv_per_rank[0] = 0;
@@ -523,10 +525,10 @@ void SetupHalo(SparseMatrix& A)
 
     // Buffer to process the GPU data
     std::vector<int> neighbors(max_neighbors);
-    HIP_CHECK(hipMemcpy(neighbors.data(),
+    HIP_CHECK(cudaMemcpy(neighbors.data(),
                         d_neighbors,
                         sizeof(int) * max_neighbors,
-                        hipMemcpyDeviceToHost));
+                        cudaMemcpyDeviceToHost));
     HIP_CHECK(deviceFree(d_neighbors));
 
     // Loop over all possible neighbors
@@ -542,29 +544,29 @@ void SetupHalo(SparseMatrix& A)
             continue;
         }
 
-        size_t rocprim_size;
-        void* rocprim_buffer = NULL;
+        size_t cub_size;
+        void* cub_buffer = NULL;
 
         // Obtain buffer size
-        HIP_CHECK(rocprim::radix_sort_pairs(rocprim_buffer,
-                                            rocprim_size,
+        HIP_CHECK(cub::DeviceRadixSort::SortPairs(cub_buffer,
+                                            cub_size,
                                             d_recvList[i],
                                             d_recvBuffer,
                                             d_haloList[i],
                                             d_haloBuffer,
                                             entriesToRecv));
-        HIP_CHECK(deviceMalloc(&rocprim_buffer, rocprim_size));
+        HIP_CHECK(deviceMalloc(&cub_buffer, cub_size));
 
         // Sort receive index array and halo index array
-        HIP_CHECK(rocprim::radix_sort_pairs(rocprim_buffer,
-                                            rocprim_size,
+        HIP_CHECK(cub::DeviceRadixSort::SortPairs(cub_buffer,
+                                            cub_size,
                                             d_recvList[i],
                                             d_recvBuffer,
                                             d_haloList[i],
                                             d_haloBuffer,
                                             entriesToRecv));
-        HIP_CHECK(deviceFree(rocprim_buffer));
-        rocprim_buffer = NULL;
+        HIP_CHECK(deviceFree(cub_buffer));
+        cub_buffer = NULL;
 
         // Swap receive buffer pointers
         global_int_t* gptr = d_recvBuffer;
@@ -581,46 +583,46 @@ void SetupHalo(SparseMatrix& A)
         global_int_t* d_offsets = reinterpret_cast<global_int_t*>(d_recvBuffer);
         global_int_t* d_unique_out = reinterpret_cast<global_int_t*>(d_haloBuffer);;
 
-        // Obtain rocprim buffer size
-        HIP_CHECK(rocprim::run_length_encode(rocprim_buffer,
-                                             rocprim_size,
+        // Obtain CUB temp storage size
+        HIP_CHECK(cub::DeviceRunLengthEncode::Encode(cub_buffer,
+                                             cub_size,
                                              d_recvList[i],
                                              entriesToRecv,
                                              d_unique_out,
                                              d_offsets + 1,
                                              d_num_runs));
-        HIP_CHECK(deviceMalloc(&rocprim_buffer, rocprim_size));
+        HIP_CHECK(deviceMalloc(&cub_buffer, cub_size));
 
         // Perform a run length encode over the receive indices to obtain the number
         // of halo entries in each row
-        HIP_CHECK(rocprim::run_length_encode(rocprim_buffer,
-                                             rocprim_size,
+        HIP_CHECK(cub::DeviceRunLengthEncode::Encode(cub_buffer,
+                                             cub_size,
                                              d_recvList[i],
                                              entriesToRecv,
                                              d_unique_out,
                                              d_offsets + 1,
                                              d_num_runs));
-        HIP_CHECK(deviceFree(rocprim_buffer));
-        rocprim_buffer = NULL;
+        HIP_CHECK(deviceFree(cub_buffer));
+        cub_buffer = NULL;
 
         // Copy the number of halo entries with respect to the i-th neighbor
         global_int_t currentRankHaloEntries;
-        HIP_CHECK(hipMemcpy(&currentRankHaloEntries, d_num_runs, sizeof(global_int_t), hipMemcpyDeviceToHost));
+        HIP_CHECK(cudaMemcpy(&currentRankHaloEntries, d_num_runs, sizeof(global_int_t), cudaMemcpyDeviceToHost));
 
         // Store the number of halo entries we need to get from i-th neighbor
         A.receiveLength[neighborCount] = currentRankHaloEntries;
 
         // d_offsets[0] = 0
-        HIP_CHECK(hipMemset(d_offsets, 0, sizeof(global_int_t)));
+        HIP_CHECK(cudaMemset(d_offsets, 0, sizeof(global_int_t)));
 
-        // Obtain rocprim buffer size
-        HIP_CHECK(rocprim::inclusive_scan(rocprim_buffer, rocprim_size, d_offsets + 1, d_offsets + 1, currentRankHaloEntries, rocprim::plus<global_int_t>()));
-        HIP_CHECK(deviceMalloc(&rocprim_buffer, rocprim_size));
+        // Obtain CUB temp storage size
+        HIP_CHECK(cub::DeviceScan::InclusiveSum(cub_buffer, cub_size, d_offsets + 1, d_offsets + 1, currentRankHaloEntries));
+        HIP_CHECK(deviceMalloc(&cub_buffer, cub_size));
 
         // Perform inclusive sum to obtain the offsets to the first halo entry of each row
-        HIP_CHECK(rocprim::inclusive_scan(rocprim_buffer, rocprim_size, d_offsets + 1, d_offsets + 1, currentRankHaloEntries, rocprim::plus<global_int_t>()));
-        HIP_CHECK(deviceFree(rocprim_buffer));
-        rocprim_buffer = NULL;
+        HIP_CHECK(cub::DeviceScan::InclusiveSum(cub_buffer, cub_size, d_offsets + 1, d_offsets + 1, currentRankHaloEntries));
+        HIP_CHECK(deviceFree(cub_buffer));
+        cub_buffer = NULL;
 
         // Launch kernel to fill all halo columns in the local matrix column index array for the i-th neighbor
         kernel_halo_columns<128><<<(currentRankHaloEntries - 1) / 128 + 1, 128>>>(
@@ -659,7 +661,7 @@ void CopyHaloToHost(SparseMatrix& A)
     A.sendBuffer = new double[A.totalToBeSent];
 
     // Copy GPU data to host
-    HIP_CHECK(hipMemcpy(A.elementsToSend, A.d_elementsToSend, sizeof(index_int_t) * A.totalToBeSent, hipMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(A.elementsToSend, A.d_elementsToSend, sizeof(index_int_t) * A.totalToBeSent, cudaMemcpyDeviceToHost));
 #endif
-    HIP_CHECK(hipMemcpy(A.mtxIndL[0], A.d_mtxIndL, sizeof(local_int_t) * A.localNumberOfRows * A.numberOfNonzerosPerRow, hipMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(A.mtxIndL[0], A.d_mtxIndL, sizeof(local_int_t) * A.localNumberOfRows * A.numberOfNonzerosPerRow, cudaMemcpyDeviceToHost));
 }

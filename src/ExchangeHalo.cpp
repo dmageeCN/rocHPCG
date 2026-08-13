@@ -52,10 +52,10 @@
 #include "Geometry.hpp"
 #include "ExchangeHalo.hpp"
 #include <cstdlib>
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 
-#ifdef OPT_ROCTX
-#include <roctracer/roctx.h>
+#ifdef OPT_NVTX
+#include <nvtx3/nvToolsExt.h>
 #endif
 
 /*!
@@ -173,15 +173,15 @@ void PrepareSendBuffer(const SparseMatrix& A, const Vector& x)
         A.perm,
         A.d_send_buffer);
 
-    HIP_CHECK(hipEventRecord(halo_gather, stream_interior));
+    HIP_CHECK(cudaEventRecord(halo_gather, stream_interior));
 
 #ifndef GPU_AWARE_MPI
     // Copy send buffer to host
-    HIP_CHECK(hipStreamWaitEvent(stream_halo, halo_gather, 0));
-    HIP_CHECK(hipMemcpyAsync(A.send_buffer,
+    HIP_CHECK(cudaStreamWaitEvent(stream_halo, halo_gather, 0));
+    HIP_CHECK(cudaMemcpyAsync(A.send_buffer,
                              A.d_send_buffer,
                              sizeof(double) * A.totalToBeSent,
-                             hipMemcpyDeviceToHost,
+                             cudaMemcpyDeviceToHost,
                              stream_halo));
 #endif
 }
@@ -218,9 +218,9 @@ void ExchangeHaloAsync(const SparseMatrix& A, Vector& x)
 
     // Synchronize stream to make sure that send buffer is available
 #ifdef GPU_AWARE_MPI
-    HIP_CHECK(hipEventSynchronize(halo_gather));
+    HIP_CHECK(cudaEventSynchronize(halo_gather));
 #else
-    HIP_CHECK(hipStreamSynchronize(stream_halo));
+    HIP_CHECK(cudaStreamSynchronize(stream_halo));
 #endif
 
     // Post async boundary sends
@@ -253,24 +253,24 @@ void ObtainRecvBuffer(const SparseMatrix& A, Vector& x)
 {
     int num_neighbors = A.numberOfSendNeighbors;
 
-#ifdef OPT_ROCTX
-    roctxRangePush("MPI ExchangeHalo");
+#ifdef OPT_NVTX
+    nvtxRangePushA("MPI ExchangeHalo");
 #endif
     // Synchronize boundary transfers
     EXIT_IF_HPCG_ERROR(MPI_Waitall(num_neighbors, A.recv_request, MPI_STATUSES_IGNORE));
     EXIT_IF_HPCG_ERROR(MPI_Waitall(num_neighbors, A.send_request, MPI_STATUSES_IGNORE));
-#ifdef OPT_ROCTX
-    roctxRangePop();
+#ifdef OPT_NVTX
+    nvtxRangePop();
 #endif
 
 #ifndef GPU_AWARE_MPI
     // Update boundary values
-    HIP_CHECK(hipMemcpyAsync(x.d_values + A.localNumberOfRows,
+    HIP_CHECK(cudaMemcpyAsync(x.d_values + A.localNumberOfRows,
                              A.recv_buffer,
                              sizeof(double) * A.totalToBeSent,
-                             hipMemcpyHostToDevice,
+                             cudaMemcpyHostToDevice,
                              stream_halo));
-    HIP_CHECK(hipStreamSynchronize(stream_halo));
+    HIP_CHECK(cudaStreamSynchronize(stream_halo));
 #endif
 }
 #endif

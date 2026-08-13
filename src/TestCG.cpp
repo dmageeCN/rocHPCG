@@ -58,7 +58,7 @@
 #include <iostream>
 using std::endl;
 #include <vector>
-#include <hip/hip_runtime.h>
+#include <cuda_runtime.h>
 #include "hpcg.hpp"
 
 #include "TestCG.hpp"

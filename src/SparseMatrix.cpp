@@ -34,8 +34,10 @@
 
 #include "SparseMatrix.hpp"
 
-#include <hip/hip_runtime.h>
-#include <rocprim/rocprim.hpp>
+#include <cuda_runtime.h>
+// CUB is the CUDA-native equivalent of rocPRIM; ships header-only with the
+// CUDA Toolkit, no separate find_package/link target required.
+#include <cub/cub.cuh>
 
 #define LAUNCH_TO_ELL_COL(blocksizex, blocksizey)                       \
     {                                                                   \
@@ -312,7 +314,7 @@ void ConvertToELL(SparseMatrix& A)
 #ifndef HPCG_NO_MPI
     HIP_CHECK(deviceMalloc((void**)&A.halo_row_ind, sizeof(index_int_t) * A.totalToBeSent));
 
-    HIP_CHECK(hipMemset(d_halo_rows, 0, sizeof(index_int_t)));
+    HIP_CHECK(cudaMemset(d_halo_rows, 0, sizeof(index_int_t)));
 #endif
 
     if     (blocksize == 32) LAUNCH_TO_ELL_COL(27, 32)
@@ -324,26 +326,26 @@ void ConvertToELL(SparseMatrix& A)
     HIP_CHECK(deviceFree(A.d_mtxIndL));
 
 #ifndef HPCG_NO_MPI
-    HIP_CHECK(hipMemcpy(&A.halo_rows, d_halo_rows, sizeof(index_int_t), hipMemcpyDeviceToHost));
+    HIP_CHECK(cudaMemcpy(&A.halo_rows, d_halo_rows, sizeof(index_int_t), cudaMemcpyDeviceToHost));
     assert(A.halo_rows <= A.totalToBeSent);
 
     HIP_CHECK(deviceMalloc((void**)&A.halo_col_ind, sizeof(index_int_t) * A.ell_width * A.halo_rows));
     HIP_CHECK(deviceMalloc((void**)&A.halo_val, sizeof(double) * A.ell_width * A.halo_rows));
 
-    size_t rocprim_size;
-    void* rocprim_buffer = NULL;
-    HIP_CHECK(rocprim::radix_sort_keys(rocprim_buffer,
-                                       rocprim_size,
+    size_t cub_size;
+    void* cub_buffer = NULL;
+    HIP_CHECK(cub::DeviceRadixSort::SortKeys(cub_buffer,
+                                       cub_size,
                                        A.halo_row_ind,
                                        A.halo_row_ind,
                                        A.halo_rows));
-    HIP_CHECK(deviceMalloc(&rocprim_buffer, rocprim_size));
-    HIP_CHECK(rocprim::radix_sort_keys(rocprim_buffer,
-                                       rocprim_size,
+    HIP_CHECK(deviceMalloc(&cub_buffer, cub_size));
+    HIP_CHECK(cub::DeviceRadixSort::SortKeys(cub_buffer,
+                                       cub_size,
                                        A.halo_row_ind,
                                        A.halo_row_ind, // TODO inplace!
                                        A.halo_rows));
-    HIP_CHECK(deviceFree(rocprim_buffer));
+    HIP_CHECK(deviceFree(cub_buffer));
 
     kernel_to_halo<128><<<(A.halo_rows - 1) / 128 + 1, 128>>>(
         A.halo_rows,
