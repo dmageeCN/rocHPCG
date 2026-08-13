@@ -88,15 +88,27 @@ set(rochpcg_source
 # every file to .cu and minimizes diff churn versus the original HIP source).
 set_source_files_properties(${rochpcg_hip_source} PROPERTIES LANGUAGE CUDA)
 
+# NOTE: Do NOT name these variables CMAKE_CUDA_FLAGS/CMAKE_HOST_FLAGS - those
+# are reserved CMake variables that CMake itself auto-injects (as a raw,
+# unsplit string, not a CMake list) into every compile command. Reusing the
+# name causes our semicolon-separated list to be duplicated into the command
+# line as one literal unsplit token (e.g. "-O3;--use_fast_math;--extended-lambda"),
+# which nvcc/sh then fails to parse (semicolons get passed straight through to
+# a subshell, which tries to run "--use_fast_math" as a command). Using our
+# own distinctly-named list variables avoids this collision entirely.
+#
 # Release/Debug flags. nvcc's --use_fast_math bundles the class of
 # approximations the original HIPCC flags (-ffp-contract=fast -ffast-math
-# -funsafe-math-optimizations) requested.
-list(APPEND CMAKE_CUDA_FLAGS "-O3;--use_fast_math;--extended-lambda")
-list(APPEND CMAKE_HOST_FLAGS "-O3;-march=native")
+# -funsafe-math-optimizations) requested. --expt-relaxed-constexpr allows
+# constexpr host functions to be called from device code and vice versa;
+# this has been an "experimental" nvcc flag for close to a decade and is
+# safe/expected to always be enabled.
+list(APPEND HPCG_CUDA_FLAGS "-O3;--use_fast_math;--extended-lambda;--expt-relaxed-constexpr")
+list(APPEND HPCG_HOST_FLAGS "-O3;-march=native")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-list(APPEND CMAKE_CUDA_FLAGS "-g;-G")
-list(APPEND CMAKE_HOST_FLAGS "-g")
+list(APPEND HPCG_CUDA_FLAGS "-g;-G")
+list(APPEND HPCG_HOST_FLAGS "-g")
 endif()
 
 # Target executable (native CMake CUDA-language executable, replacing the
@@ -116,8 +128,8 @@ set_target_properties(rochpcg PROPERTIES
 )
 
 target_compile_options(rochpcg PRIVATE
-  $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_HOST_FLAGS}>
-  $<$<COMPILE_LANGUAGE:CUDA>:${CMAKE_CUDA_FLAGS} -Xcompiler=-march=native>
+  $<$<COMPILE_LANGUAGE:CXX>:${HPCG_HOST_FLAGS}>
+  $<$<COMPILE_LANGUAGE:CUDA>:${HPCG_CUDA_FLAGS} -Xcompiler=-march=native>
 )
 
 # Support only for contiguous arrays

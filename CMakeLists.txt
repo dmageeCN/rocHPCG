@@ -85,8 +85,15 @@ option(OPT_NVTX "Enable NVTX markers" OFF)
 # Dependencies
 include(cmake/Dependencies.cmake)
 
-# Setup version (rocm_setup_version macro no longer available/needed)
+# Setup version (rocm_setup_version macro no longer available/needed).
+# NOTE: Version.hpp.in expects the individual MAJOR/MINOR/PATCH/TWEAK
+# sub-variables (previously populated automatically by rocm_setup_version);
+# they must be set explicitly here or the substituted macros end up empty.
 set(rochpcg_VERSION 0.9.0)
+set(rochpcg_VERSION_MAJOR 0)
+set(rochpcg_VERSION_MINOR 9)
+set(rochpcg_VERSION_PATCH 0)
+set(rochpcg_VERSION_TWEAK 0)
 
 # rocHPCG source directory
 add_subdirectory(src)

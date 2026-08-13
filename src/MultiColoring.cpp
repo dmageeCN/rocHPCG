@@ -344,7 +344,7 @@ void JPLColoring(SparseMatrix& A)
     HIP_CHECK(cub::DeviceRadixSort::SortPairs(buf, size, keys, vals, m, startbit, endbit));
     HIP_CHECK(deviceFree(buf));
 
-    kernel_create_perm<1024><<<(m - 1) / 1024 + 1, 1024>>>(m, vals.current(), A.perm);
+    kernel_create_perm<1024><<<(m - 1) / 1024 + 1, 1024>>>(m, vals.Current(), A.perm);
 
     HIP_CHECK(deviceFree(tmp_color));
     HIP_CHECK(deviceFree(tmp_perm));

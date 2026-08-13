@@ -584,13 +584,17 @@ void SetupHalo(SparseMatrix& A)
         global_int_t* d_unique_out = reinterpret_cast<global_int_t*>(d_haloBuffer);;
 
         // Obtain CUB temp storage size
+        // NOTE: cub::DeviceRunLengthEncode::Encode's argument order differs from
+        // rocprim::run_length_encode's - CUB wants
+        // (d_in, d_unique_out, d_counts_out, d_num_runs_out, num_items), whereas
+        // rocPRIM took (d_in, num_items, d_unique_out, d_counts_out, d_num_runs_out).
         HIP_CHECK(cub::DeviceRunLengthEncode::Encode(cub_buffer,
                                              cub_size,
                                              d_recvList[i],
-                                             entriesToRecv,
                                              d_unique_out,
                                              d_offsets + 1,
-                                             d_num_runs));
+                                             d_num_runs,
+                                             entriesToRecv));
         HIP_CHECK(deviceMalloc(&cub_buffer, cub_size));
 
         // Perform a run length encode over the receive indices to obtain the number
@@ -598,10 +602,10 @@ void SetupHalo(SparseMatrix& A)
         HIP_CHECK(cub::DeviceRunLengthEncode::Encode(cub_buffer,
                                              cub_size,
                                              d_recvList[i],
-                                             entriesToRecv,
                                              d_unique_out,
                                              d_offsets + 1,
-                                             d_num_runs));
+                                             d_num_runs,
+                                             entriesToRecv));
         HIP_CHECK(deviceFree(cub_buffer));
         cub_buffer = NULL;
 
