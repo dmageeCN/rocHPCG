@@ -163,6 +163,15 @@ endif()
 # MPI
 if(HPCG_MPI)
   target_link_libraries(rochpcg PRIVATE MPI::MPI_CXX libnuma::libnuma)
+  # IF CMAKE_CXX_COMPILER is already an MPI wrapper (e.g. CXX=mpicxx), 
+  # FindMPI.cmake detects MPI support "implicitly" and skips the step
+  # that would otherwise populate MPI_CXX_INCLUDE_DIRS. So the binaries 
+  # compiled with hipcc don't get -I to MPI headers, they rely on this 
+  # target's INCLUDE_DIRECTORIES. Explicitly add MPI_HOME/include since 
+  # MPI_HOME is set by HPCG_MPI_DIR to find <mpi.h> reliably.
+  if(MPI_HOME)
+    target_include_directories(rochpcg PRIVATE ${MPI_HOME}/include)
+  endif()
 else()
   target_compile_definitions(rochpcg PRIVATE HPCG_NO_MPI)
 endif()
