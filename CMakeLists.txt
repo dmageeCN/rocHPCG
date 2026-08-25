@@ -54,8 +54,22 @@ if(NOT CMAKE_CUDA_ARCHITECTURES)
 endif()
 
 # rocHPCG project (native CUDA language, replacing the HIP-CMake-package's
-# hip_add_executable() approach)
-project(rochpcg LANGUAGES CXX CUDA)
+# hip_add_executable() approach).
+#
+# CXX is enabled first so CMAKE_CXX_COMPILER is resolved before CUDA is
+# enabled: CMAKE_CUDA_HOST_COMPILER must be set before that point, or it's
+# read-only/undefined behavior.
+project(rochpcg LANGUAGES CXX)
+
+# Pin nvcc's host compiler (-ccbin) to CMAKE_CXX_COMPILER. Needed when CXX
+# is an MPI wrapper (e.g. mpicxx): its baked-in -I/-L/-l flags then apply to
+# nvcc's host-compile stage too, so CUDA-language sources find <mpi.h>
+# without relying on find_package(MPI)'s MPI_CXX_INCLUDE_DIRS.
+if(CMAKE_CXX_COMPILER)
+  set(CMAKE_CUDA_HOST_COMPILER "${CMAKE_CXX_COMPILER}")
+endif()
+
+enable_language(CUDA)
 
 # Force library install path to lib (CentOS 7 defaults to lib64)
 set(CMAKE_INSTALL_LIBDIR "lib" CACHE INTERNAL "Installation directory for libraries" FORCE)
