@@ -585,11 +585,12 @@ int main(int argc, char * argv[]) {
   HIPDeleteCGData(data);
   DeleteMatrix(A); // This delete will recursively delete all coarse grid data
 
-  HPCG_Finalize();
-
   // Finish up
 #ifndef HPCG_NO_MPI
   MPI_Finalize();
 #endif
+
+  HPCG_Finalize();
+
   return 0;
 }
