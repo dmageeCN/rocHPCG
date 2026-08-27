@@ -585,11 +585,17 @@ int main(int argc, char * argv[]) {
   HIPDeleteCGData(data);
   DeleteMatrix(A); // This delete will recursively delete all coarse grid data
 
-  HPCG_Finalize();
-
-  // Finish up
+  // MPI_Finalize() must run before HPCG_Finalize(): the latter ends with
+  // cudaDeviceReset(), which destroys the CUDA context/streams. OpenMPI's
+  // OFI/libfabric transport does its own CUDA cleanup (e.g.
+  // cuStreamSynchronize) inside MPI_Finalize()'s teardown path; if the CUDA
+  // context is already gone by then, that call is undefined behavior and
+  // segfaults/aborts several ranks right after final results are printed.
 #ifndef HPCG_NO_MPI
   MPI_Finalize();
 #endif
+
+  HPCG_Finalize();
+
   return 0;
 }
